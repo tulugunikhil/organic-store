@@ -21,7 +21,9 @@ export default function Navbar() {
           <Link to="/seller" className="secondary-btn" style={{ textDecoration: "none" }}>
             Seller Page
           </Link>
-          <span className="badge-pill">Cart ({cart.length})</span>
+          <Link to="/checkout" className="badge-pill" style={{ textDecoration: "none" }}>
+            Cart ({cart.length})
+          </Link>
           {user ? (
             <>
               <Link to="/user" className="badge-pill" style={{ textDecoration: "none" }}>

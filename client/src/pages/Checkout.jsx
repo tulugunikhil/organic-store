@@ -4,7 +4,13 @@ import { CartContext } from "../context/CartContext";
 
 export default function Checkout() {
   const { cart, removeFromCart } = useContext(CartContext);
-  const [form, setForm] = useState({ name: "", address: "", card: "" });
+  const [form, setForm] = useState({
+    name: "",
+    address: "",
+    card: "",
+    upi: "",
+    paymentMethod: "Card",
+  });
   const [submitted, setSubmitted] = useState(false);
 
   const subtotal = useMemo(() => {
@@ -63,15 +69,52 @@ export default function Checkout() {
                 />
               </label>
 
-              <label style={{ display: "block", marginBottom: "10px" }}>
-                <span style={{ display: "block", marginBottom: "6px", fontWeight: 700 }}>Card</span>
-                <input
-                  required
-                  value={form.card}
-                  onChange={(e) => setForm({ ...form, card: e.target.value })}
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: "12px", border: "1px solid #dcd3c5" }}
-                />
-              </label>
+              <div style={{ marginBottom: "14px" }}>
+                <span style={{ display: "block", marginBottom: "8px", fontWeight: 700 }}>Payment method</span>
+                <div style={{ display: "grid", gap: "8px" }}>
+                  {[
+                    "Card",
+                    "UPI",
+                    "Cash on Delivery",
+                  ].map((method) => (
+                    <label key={method} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", border: "1px solid #e7ddc7", borderRadius: "10px", background: form.paymentMethod === method ? "#edf8eb" : "#fffaf1" }}>
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        checked={form.paymentMethod === method}
+                        onChange={() => setForm({ ...form, paymentMethod: method })}
+                      />
+                      <span>{method}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {form.paymentMethod === "Card" && (
+                <label style={{ display: "block", marginBottom: "10px" }}>
+                  <span style={{ display: "block", marginBottom: "6px", fontWeight: 700 }}>Card number</span>
+                  <input
+                    required
+                    value={form.card}
+                    onChange={(e) => setForm({ ...form, card: e.target.value })}
+                    placeholder="XXXX XXXX XXXX 1234"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "12px", border: "1px solid #dcd3c5" }}
+                  />
+                </label>
+              )}
+
+              {form.paymentMethod === "UPI" && (
+                <label style={{ display: "block", marginBottom: "10px" }}>
+                  <span style={{ display: "block", marginBottom: "6px", fontWeight: 700 }}>UPI ID</span>
+                  <input
+                    required
+                    value={form.upi}
+                    onChange={(e) => setForm({ ...form, upi: e.target.value })}
+                    placeholder="yourname@upi"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "12px", border: "1px solid #dcd3c5" }}
+                  />
+                </label>
+              )}
 
               <button className="primary-btn" type="submit" style={{ width: "100%", marginTop: "6px" }}>
                 Place order
@@ -80,7 +123,7 @@ export default function Checkout() {
 
             {submitted && (
               <div style={{ marginTop: "16px", background: "#edf8eb", borderRadius: "14px", padding: "12px", color: "#246b35", fontWeight: 700 }}>
-                Thanks, {form.name || "friend"}! Your organic order is confirmed.
+                Thanks, {form.name || "friend"}! Your {form.paymentMethod.toLowerCase()} payment is confirmed and your organic order is on the way.
               </div>
             )}
           </section>
