@@ -18,9 +18,6 @@ export default function Navbar() {
           </div>
         </div>
         <div className="topbar-actions">
-          <Link to="/seller" className="secondary-btn" style={{ textDecoration: "none" }}>
-            Seller Page
-          </Link>
           <Link to="/checkout" className="badge-pill" style={{ textDecoration: "none" }}>
             Cart ({cart.length})
           </Link>

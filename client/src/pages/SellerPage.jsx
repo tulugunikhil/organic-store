@@ -1,5 +1,13 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
+
+const initialProducts = [
+  { name: "Royal Basmati Rice", category: "Rice", status: "In stock", stock: 120, price: 599 },
+  { name: "Organic Red Lentils", category: "Pulses", status: "Low stock", stock: 35, price: 329 },
+  { name: "Fresh Bananas", category: "Fruit", status: "In stock", stock: 80, price: 199 },
+  { name: "Farm Spinach", category: "Vegetables", status: "Fresh arrival", stock: 45, price: 249 },
+];
 
 const sellerStats = [
   { label: "Active listings", value: "24" },
@@ -8,14 +16,26 @@ const sellerStats = [
   { label: "Stock health", value: "Good" },
 ];
 
-const sellerProducts = [
-  { name: "Royal Basmati Rice", status: "In stock", stock: "120 kg" },
-  { name: "Organic Red Lentils", status: "Low stock", stock: "35 kg" },
-  { name: "Fresh Bananas", status: "In stock", stock: "80 bunches" },
-  { name: "Farm Spinach", status: "Fresh arrival", stock: "45 bundles" },
-];
-
 export default function SellerPage() {
+  const [products, setProducts] = useState(initialProducts);
+  const [form, setForm] = useState({ name: "", category: "Rice", stock: "", price: "" });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.name || !form.stock || !form.price) return;
+
+    const newProduct = {
+      name: form.name,
+      category: form.category,
+      status: Number(form.stock) > 20 ? "In stock" : "Low stock",
+      stock: Number(form.stock),
+      price: Number(form.price),
+    };
+
+    setProducts((prev) => [newProduct, ...prev]);
+    setForm({ name: "", category: "Rice", stock: "", price: "" });
+  };
+
   return (
     <div className="storefront-shell">
       <Navbar />
@@ -64,26 +84,65 @@ export default function SellerPage() {
             </div>
 
             <div className="seller-list">
-              {sellerProducts.map((item) => (
-                <div key={item.name} className="seller-list-item">
+              {products.map((item) => (
+                <div key={`${item.name}-${item.stock}`} className="seller-list-item">
                   <div>
                     <strong>{item.name}</strong>
                     <p>{item.status}</p>
                   </div>
-                  <span>{item.stock}</span>
+                  <div style={{ textAlign: "right" }}>
+                    <div>{item.stock} units</div>
+                    <div style={{ fontSize: "0.8rem", color: "#6b776d" }}>₹{item.price}</div>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="seller-card">
-            <h3 className="section-title">Quick actions</h3>
-            <ul className="seller-actions">
-              <li>Upload new produce listings</li>
-              <li>Update prices for seasonal items</li>
-              <li>Review incoming customer orders</li>
-              <li>Share delivery updates with buyers</li>
-            </ul>
+            <h3 className="section-title">Add product</h3>
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Product name"
+                style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }}
+              />
+              <select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }}
+              >
+                <option value="Rice">Rice</option>
+                <option value="Fruit">Fruit</option>
+                <option value="Pulses">Pulses</option>
+                <option value="Oils">Oils</option>
+                <option value="Dairy">Dairy</option>
+                <option value="Vegetables">Vegetables</option>
+              </select>
+              <input
+                type="number"
+                value={form.stock}
+                onChange={(e) => setForm({ ...form, stock: e.target.value })}
+                placeholder="Quantity"
+                style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }}
+              />
+              <input
+                type="number"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+                placeholder="Price"
+                style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }}
+              />
+              <button
+                type="submit"
+                className="primary-btn"
+                style={{ width: "100%", marginTop: "4px" }}
+              >
+                Save product
+              </button>
+            </form>
           </div>
         </section>
       </main>

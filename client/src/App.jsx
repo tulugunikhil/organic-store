@@ -8,6 +8,7 @@ import AuthPage from "./pages/AuthPage";
 import UserPage from "./pages/UserPage";
 import SellerPage from "./pages/SellerPage";
 import DebugPage from "./pages/DebugPage";
+import CategoryPage from "./pages/CategoryPage";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/" element={<Storefront />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/checkout" element={<Checkout />} />
+            <Route path="/category/:categoryName" element={<CategoryPage />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/user" element={<UserPage />} />
             <Route path="/seller" element={<SellerPage />} />

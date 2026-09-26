@@ -9,9 +9,29 @@ export default function AuthPage() {
   const [form, setForm] = useState({ email: "", phone: "", password: "", confirmPassword: "", role: "buyer" });
   const [error, setError] = useState("");
 
+  const handleAdminShortcut = () => {
+    const adminForm = {
+      email: "admin@pureharvest.com",
+      phone: "0000000000",
+      password: "admin123",
+      confirmPassword: "admin123",
+      role: "admin",
+    };
+    setForm(adminForm);
+    login({
+      email: adminForm.email,
+      phone: adminForm.phone,
+      name: "Admin",
+      role: "admin",
+    });
+    navigate("/dashboard");
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
+
+    const isAdminLogin = form.role === "admin" || form.email.toLowerCase() === "admin@pureharvest.com";
 
     if (mode === "register") {
       if (!form.email || !form.phone || !form.password || !form.confirmPassword) {
@@ -32,7 +52,7 @@ export default function AuthPage() {
         name: form.email.split("@")[0],
         role: form.role,
       });
-      navigate(form.role === "seller" ? "/seller" : "/");
+      navigate(isAdminLogin ? "/dashboard" : form.role === "seller" ? "/seller" : "/");
       return;
     }
 
@@ -41,8 +61,14 @@ export default function AuthPage() {
       return;
     }
 
+    if (form.email.toLowerCase() === "admin@pureharvest.com" && form.password === "admin123") {
+      login({ email: form.email, phone: form.phone || "Not provided", name: "Admin", role: "admin" });
+      navigate("/dashboard");
+      return;
+    }
+
     login({ email: form.email, phone: form.phone || "Not provided", name: form.email.split("@")[0], role: form.role });
-    navigate(form.role === "seller" ? "/seller" : "/");
+    navigate(isAdminLogin ? "/dashboard" : form.role === "seller" ? "/seller" : "/");
   };
 
   return (
@@ -62,7 +88,7 @@ export default function AuthPage() {
         </div>
       </nav>
 
-      <main className="storefront-main" style={{ display: "flex", justifyContent: "center" }}>
+      <main className="storefront-main" style={{ display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
         <section className="cart-card" style={{ width: "100%", maxWidth: 460, padding: "28px" }}>
           <div style={{ marginBottom: "18px" }}>
             <h2 className="section-title">{mode === "login" ? "Welcome back" : "Create your account"}</h2>
@@ -111,6 +137,7 @@ export default function AuthPage() {
               >
                 <option value="buyer">Buyer</option>
                 <option value="seller">Seller</option>
+                <option value="admin">Admin</option>
               </select>
             </label>
 
@@ -142,6 +169,23 @@ export default function AuthPage() {
           </form>
 
           <div style={{ marginTop: "14px", textAlign: "center" }}>
+            <button
+              type="button"
+              onClick={handleAdminShortcut}
+              style={{
+                width: "100%",
+                marginBottom: "12px",
+                background: "#1d8f56",
+                color: "white",
+                border: "none",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              Login as Admin
+            </button>
             {mode === "login" ? (
               <span>
                 New here? <button onClick={() => setMode("register")} style={{ border: "none", background: "none", color: "#2e7d32", fontWeight: 700, cursor: "pointer" }}>Create account</button>
@@ -151,6 +195,35 @@ export default function AuthPage() {
                 Already have an account? <button onClick={() => setMode("login")} style={{ border: "none", background: "none", color: "#2e7d32", fontWeight: 700, cursor: "pointer" }}>Login</button>
               </span>
             )}
+          </div>
+        </section>
+
+        <section style={{ width: "100%", maxWidth: 980, marginTop: "24px", padding: "22px 18px 12px", borderTop: "1px solid #e5dcca", color: "#465448" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "18px" }}>
+            <div>
+              <div style={{ fontWeight: 800, color: "#173626", marginBottom: "8px" }}>PureHarvest</div>
+              <p style={{ margin: 0, lineHeight: 1.7 }}>
+                Fresh organic groceries delivered from trusted farms to homes with care, quality, and convenience.
+              </p>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 800, color: "#173626", marginBottom: "8px" }}>Seller login</div>
+              <p style={{ margin: 0, lineHeight: 1.7 }}>
+                Grow your local business with PureHarvest. Manage listings, track inventory, and reach more customers through a seamless seller dashboard.
+              </p>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 800, color: "#173626", marginBottom: "8px" }}>Contact</div>
+              <p style={{ margin: 0, lineHeight: 1.7 }}>
+                Email: <a href="mailto:contact@pureharvest.com" style={{ color: "#2e7d32", textDecoration: "none" }}>contact@pureharvest.com</a>
+              </p>
+            </div>
+          </div>
+
+          <div style={{ marginTop: "18px", paddingTop: "14px", borderTop: "1px solid #ece3d6", fontSize: "0.84rem", color: "#58695e", lineHeight: 1.7 }}>
+            © 2026 PureHarvest. All rights reserved. Developed and owned by <strong style={{ color: "#173626" }}>Tulugu Nikhil</strong>.
           </div>
         </section>
       </main>
