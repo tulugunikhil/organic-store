@@ -6,32 +6,23 @@ export default function AuthPage() {
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ email: "", phone: "", password: "", confirmPassword: "", role: "buyer" });
+  const [form, setForm] = useState({ email: "", phone: "", password: "", confirmPassword: "" });
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleAdminShortcut = () => {
-    const adminForm = {
-      email: "admin@pureharvest.com",
-      phone: "0000000000",
-      password: "admin123",
-      confirmPassword: "admin123",
-      role: "admin",
-    };
-    setForm(adminForm);
-    login({
-      email: adminForm.email,
-      phone: adminForm.phone,
-      name: "Admin",
-      role: "admin",
-    });
-    navigate("/dashboard");
+  const handleSellerShortcut = () => {
+    navigate("/auth/seller");
   };
 
-  const handleSubmit = (e) => {
+  const handleAdminShortcut = () => {
+    navigate("/auth/admin");
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-
-    const isAdminLogin = form.role === "admin" || form.email.toLowerCase() === "admin@pureharvest.com";
 
     if (mode === "register") {
       if (!form.email || !form.phone || !form.password || !form.confirmPassword) {
@@ -46,13 +37,15 @@ export default function AuthPage() {
         setError("Passwords do not match.");
         return;
       }
-      login({
-        email: form.email,
-        phone: form.phone,
-        name: form.email.split("@")[0],
-        role: form.role,
+      const registerResponse = await fetch("http://localhost:5000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: form.email.split("@")[0], email: form.email, phone: form.phone, password: form.password, role: "buyer" }),
       });
-      navigate(isAdminLogin ? "/dashboard" : form.role === "seller" ? "/seller" : "/");
+      const registerData = await registerResponse.json();
+      if (!registerResponse.ok) throw new Error(registerData.message || "Registration failed");
+      login({ token: registerData.token, email: registerData.user.email, phone: form.phone, name: registerData.user.name, role: "buyer" });
+      navigate("/");
       return;
     }
 
@@ -61,14 +54,54 @@ export default function AuthPage() {
       return;
     }
 
-    if (form.email.toLowerCase() === "admin@pureharvest.com" && form.password === "admin123") {
-      login({ email: form.email, phone: form.phone || "Not provided", name: "Admin", role: "admin" });
-      navigate("/dashboard");
+    if (form.email.toLowerCase() === "admin@pureharvest.com" || form.email.toLowerCase() === "seller@pureharvest.com") {
+      setError("Use the dedicated seller or admin login page for those accounts.");
       return;
     }
 
-    login({ email: form.email, phone: form.phone || "Not provided", name: form.email.split("@")[0], role: form.role });
-    navigate(isAdminLogin ? "/dashboard" : form.role === "seller" ? "/seller" : "/");
+    try {
+      setLoading(true);
+      const response = await fetch("http://localhost:5000/api/auth/buyer/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, password: form.password }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Could not send OTP");
+      setOtpSent(true);
+      if (data.developmentOtp) setOtp(data.developmentOtp);
+      setError(data.message || "OTP sent to your email.");
+    } catch (err) {
+      setError(err.message || "Could not send OTP");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!otp) {
+      setError("Enter the OTP sent to your email.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch("http://localhost:5000/api/auth/buyer/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, otp }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "OTP verification failed");
+      login({ email: data.user.email, phone: form.phone || "Not provided", name: data.user.name || form.email.split("@")[0], role: "buyer" });
+      navigate("/");
+    } catch (err) {
+      setError(err.message || "OTP verification failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -100,12 +133,23 @@ export default function AuthPage() {
           </div>
 
           {error && (
-            <div style={{ marginBottom: "12px", background: "#fde8e8", color: "#b91c1c", padding: "10px 12px", borderRadius: "12px" }}>
+            <div style={{ marginBottom: "12px", background: otpSent ? "#e8f6e8" : "#fde8e8", color: otpSent ? "#216e39" : "#b91c1c", padding: "10px 12px", borderRadius: "12px" }}>
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit}>
+          {mode === "login" && otpSent ? <form onSubmit={handleVerifyOtp}>
+            <label style={{ display: "block", marginBottom: "10px" }}>
+              <span style={{ display: "block", marginBottom: "6px", fontWeight: 700 }}>Email OTP</span>
+              <input type="text" inputMode="numeric" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} placeholder="Enter 6-digit OTP" style={{ width: "100%", padding: "10px 12px", borderRadius: "12px", border: "1px solid #dcd3c5" }} />
+            </label>
+            <button className="primary-btn" type="submit" style={{ width: "100%", marginTop: "6px" }} disabled={loading}>
+              {loading ? "Verifying..." : "Verify email and login"}
+            </button>
+            <button type="button" onClick={() => { setOtpSent(false); setOtp(""); setError(""); }} style={{ width: "100%", marginTop: "10px", border: "none", background: "none", color: "#2e7d32", fontWeight: 700, cursor: "pointer" }}>
+              Use a different email
+            </button>
+          </form> : <form onSubmit={handleSubmit}>
             <label style={{ display: "block", marginBottom: "10px" }}>
               <span style={{ display: "block", marginBottom: "6px", fontWeight: 700 }}>Email</span>
               <input
@@ -127,19 +171,6 @@ export default function AuthPage() {
                 />
               </label>
             )}
-
-            <label style={{ display: "block", marginBottom: "10px" }}>
-              <span style={{ display: "block", marginBottom: "6px", fontWeight: 700 }}>Choose account type</span>
-              <select
-                value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: "12px", border: "1px solid #dcd3c5", background: "white" }}
-              >
-                <option value="buyer">Buyer</option>
-                <option value="seller">Seller</option>
-                <option value="admin">Admin</option>
-              </select>
-            </label>
 
             <label style={{ display: "block", marginBottom: "10px" }}>
               <span style={{ display: "block", marginBottom: "6px", fontWeight: 700 }}>Password</span>
@@ -164,18 +195,35 @@ export default function AuthPage() {
             )}
 
             <button className="primary-btn" type="submit" style={{ width: "100%", marginTop: "6px" }}>
-              {mode === "login" ? "Login" : "Register"}
+              {mode === "login" ? (loading ? "Sending OTP..." : "Send login OTP") : "Register"}
             </button>
-          </form>
+          </form>}
 
           <div style={{ marginTop: "14px", textAlign: "center" }}>
+            <button
+              type="button"
+              onClick={handleSellerShortcut}
+              style={{
+                width: "100%",
+                marginBottom: "12px",
+                background: "#1d8f56",
+                color: "white",
+                border: "none",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              Login as Seller
+            </button>
             <button
               type="button"
               onClick={handleAdminShortcut}
               style={{
                 width: "100%",
                 marginBottom: "12px",
-                background: "#1d8f56",
+                background: "#0b4d2f",
                 color: "white",
                 border: "none",
                 borderRadius: "12px",

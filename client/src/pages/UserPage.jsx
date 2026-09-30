@@ -1,16 +1,26 @@
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
-
-const orders = [
-  { id: "ORD-1001", item: "Organic Tomatoes", status: "Delivered" },
-  { id: "ORD-1002", item: "Farm Eggs", status: "On the way" },
-];
 
 const wishlist = ["Fresh Basil", "Honeycrisp Apples", "Wildflower Honey"];
 
 export default function UserPage() {
   const { user } = useContext(AuthContext);
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.token) {
+      setOrdersLoading(false);
+      return;
+    }
+
+    fetch("http://localhost:5000/api/orders/mine", { headers: { Authorization: `Bearer ${user.token}` } })
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => setOrders(Array.isArray(data) ? data : []))
+      .catch(() => setOrders([]))
+      .finally(() => setOrdersLoading(false));
+  }, [user?.token]);
 
   if (!user) {
     return (
@@ -67,11 +77,13 @@ export default function UserPage() {
           <section className="cart-card" style={{ padding: "20px" }}>
             <h3 className="section-title">Orders</h3>
             <div style={{ marginTop: "10px" }}>
+              {ordersLoading && <p className="section-subtitle">Loading orders...</p>}
+              {!ordersLoading && orders.length === 0 && <p className="section-subtitle">No saved orders yet.</p>}
               {orders.map((order) => (
                 <div key={order.id} className="cart-item" style={{ display: "block" }}>
                   <strong>{order.id}</strong>
-                  <div className="cart-item-price">{order.item}</div>
-                  <div className="cart-item-price">Status: {order.status}</div>
+                  <div className="cart-item-price">{order.items?.map((item) => `${item.name} x${item.quantity}`).join(", ")}</div>
+                  <div className="cart-item-price">Status: {order.status} | Total: ₹{order.total}</div>
                 </div>
               ))}
             </div>
@@ -92,14 +104,18 @@ export default function UserPage() {
           <section className="cart-card" style={{ padding: "20px" }}>
             <h3 className="section-title">Payment & address</h3>
             <div style={{ marginTop: "10px" }}>
-              <div className="cart-item" style={{ display: "block" }}>
-                <strong>Payment</strong>
-                <div className="cart-item-price">Visa ending in 4821</div>
-              </div>
-              <div className="cart-item" style={{ display: "block" }}>
-                <strong>Address</strong>
-                <div className="cart-item-price">123 Green Street, Springfield</div>
-              </div>
+              {orders[0] ? (
+                <>
+                  <div className="cart-item" style={{ display: "block" }}>
+                    <strong>Latest payment</strong>
+                    <div className="cart-item-price">{orders[0].payment.method} ({orders[0].payment.status})</div>
+                  </div>
+                  <div className="cart-item" style={{ display: "block" }}>
+                    <strong>Latest address</strong>
+                    <div className="cart-item-price">{orders[0].delivery.address}</div>
+                  </div>
+                </>
+              ) : <p className="section-subtitle">Payment and address details appear after your first order.</p>}
             </div>
           </section>
         </div>

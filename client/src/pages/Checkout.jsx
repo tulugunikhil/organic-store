@@ -1,9 +1,11 @@
 import { useContext, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CartContext } from "../context/CartContext";
+import { AuthContext } from "../context/AuthContext";
 
 export default function Checkout() {
   const { cart, removeFromCart } = useContext(CartContext);
+  const { user } = useContext(AuthContext);
   const [form, setForm] = useState({
     name: "",
     address: "",
@@ -12,6 +14,9 @@ export default function Checkout() {
     paymentMethod: "Card",
   });
   const [submitted, setSubmitted] = useState(false);
+  const [orderId, setOrderId] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const subtotal = useMemo(() => {
     return cart.reduce((total, item) => total + Number(item.price || 0), 0);
@@ -20,9 +25,39 @@ export default function Checkout() {
   const deliveryFee = cart.length > 0 ? 399 : 0;
   const total = subtotal + deliveryFee;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
+    setError("");
+    if (!user?.token) {
+      setError("Please log in before placing an order.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const digits = form.card.replace(/\D/g, "");
+      const response = await fetch("http://localhost:5000/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user.token}` },
+        body: JSON.stringify({
+          account: { name: user.name || form.name, email: user.email, phone: user.phone || "" },
+          items: cart,
+          delivery: { name: form.name, address: form.address },
+          payment: { method: form.paymentMethod, cardLast4: digits.slice(-4), upiId: form.paymentMethod === "UPI" ? form.upi : "" },
+          subtotal,
+          deliveryFee,
+          total,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Could not place order");
+      setOrderId(data.id);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err.message || "Could not place order");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -47,6 +82,8 @@ export default function Checkout() {
           <section className="cart-card" style={{ padding: "24px" }}>
             <h2 className="section-title">Delivery details</h2>
             <p className="section-subtitle">We’ll bring your organic order to your doorstep.</p>
+
+            {error && <div style={{ marginTop: "14px", background: "#fde8e8", color: "#b91c1c", borderRadius: "12px", padding: "10px 12px" }}>{error}</div>}
 
             <form onSubmit={handleSubmit} style={{ marginTop: "18px" }}>
               <label style={{ display: "block", marginBottom: "10px" }}>
@@ -117,13 +154,13 @@ export default function Checkout() {
               )}
 
               <button className="primary-btn" type="submit" style={{ width: "100%", marginTop: "6px" }}>
-                Place order
+                {loading ? "Saving order..." : "Place order"}
               </button>
             </form>
 
             {submitted && (
               <div style={{ marginTop: "16px", background: "#edf8eb", borderRadius: "14px", padding: "12px", color: "#246b35", fontWeight: 700 }}>
-                Thanks, {form.name || "friend"}! Your {form.paymentMethod.toLowerCase()} payment is confirmed and your organic order is on the way.
+                Thanks, {form.name || "friend"}! Order <strong>{orderId}</strong> was saved with {form.paymentMethod.toLowerCase()} payment.
               </div>
             )}
           </section>

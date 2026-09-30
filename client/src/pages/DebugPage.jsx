@@ -64,16 +64,25 @@ export default function DebugPage() {
             {products.length === 0 ? (
               <p>No products found.</p>
             ) : (
-              <div className="seller-list">
-                {products.map((product) => (
-                  <div key={product._id || product.name} className="seller-list-item">
-                    <div>
-                      <strong>{product.name}</strong>
-                      <p>{product.category || "General"}</p>
-                    </div>
-                    <span>₹{Number(product.price || 0)}</span>
-                  </div>
-                ))}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                  <thead>
+                    <tr style={{ background: "#f7f9f4", color: "#516159" }}>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Name</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Category</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.map((product) => (
+                      <tr key={product._id || product.name} style={{ borderBottom: "1px solid #eef1ea" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 700 }}>{product.name}</td>
+                        <td style={{ padding: "10px 12px" }}>{product.category || "General"}</td>
+                        <td style={{ padding: "10px 12px" }}>₹{Number(product.price || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
@@ -83,16 +92,27 @@ export default function DebugPage() {
             {users.length === 0 ? (
               <p>No users found.</p>
             ) : (
-              <div className="seller-list">
-                {users.map((user) => (
-                  <div key={user._id || user.email} className="seller-list-item">
-                    <div>
-                      <strong>{user.name || user.email}</strong>
-                      <p>{user.email}</p>
-                    </div>
-                    <span>{user.role || "buyer"}</span>
-                  </div>
-                ))}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                  <thead>
+                    <tr style={{ background: "#f7f9f4", color: "#516159" }}>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Name</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Email</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Role</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>GST Number</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((user) => (
+                      <tr key={user._id || user.email} style={{ borderBottom: "1px solid #eef1ea" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 700 }}>{user.name || user.email}</td>
+                        <td style={{ padding: "10px 12px" }}>{user.email}</td>
+                        <td style={{ padding: "10px 12px" }}>{user.role || "buyer"}</td>
+                        <td style={{ padding: "10px 12px" }}>{user.gstNumber || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>

@@ -9,6 +9,8 @@ import UserPage from "./pages/UserPage";
 import SellerPage from "./pages/SellerPage";
 import DebugPage from "./pages/DebugPage";
 import CategoryPage from "./pages/CategoryPage";
+import AdminLoginPage from "./pages/AdminLoginPage";
+import SellerLoginPage from "./pages/SellerLoginPage";
 
 export default function App() {
   return (
@@ -21,6 +23,8 @@ export default function App() {
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/category/:categoryName" element={<CategoryPage />} />
             <Route path="/auth" element={<AuthPage />} />
+            <Route path="/auth/seller" element={<SellerLoginPage />} />
+            <Route path="/auth/admin" element={<AdminLoginPage />} />
             <Route path="/user" element={<UserPage />} />
             <Route path="/seller" element={<SellerPage />} />
             <Route path="/debug" element={<DebugPage />} />
