@@ -9,6 +9,8 @@ export default function Checkout() {
   const [form, setForm] = useState({
     name: "",
     address: "",
+    pincode: "",
+    location: null,
     card: "",
     upi: "",
     paymentMethod: "Card",
@@ -17,6 +19,58 @@ export default function Checkout() {
   const [orderId, setOrderId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
+
+  const handleUseLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage("Location is unavailable in this browser. Enter your address and PIN code manually.");
+      return;
+    }
+
+    setLocating(true);
+    setLocationMessage("Finding your location...");
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      const location = { latitude: coords.latitude, longitude: coords.longitude };
+      setForm((current) => ({ ...current, location }));
+
+      try {
+        const query = new URLSearchParams({
+          format: "jsonv2",
+          lat: String(coords.latitude),
+          lon: String(coords.longitude),
+          addressdetails: "1",
+          zoom: "18",
+        });
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${query}`);
+        if (!response.ok) throw new Error("Address lookup failed");
+
+        const result = await response.json();
+        const parts = result.address || {};
+        const street = [parts.house_number, parts.road].filter(Boolean).join(" ");
+        const locality = parts.neighbourhood || parts.suburb || parts.village || parts.town || parts.city_district;
+        const city = parts.city || parts.town || parts.city_district || parts.county;
+        const address = [...new Set([street, locality, city, parts.state].filter(Boolean))].join(", ");
+        const pincode = String(parts.postcode || "").replace(/\D/g, "").slice(0, 6);
+
+        setForm((current) => ({
+          ...current,
+          address: address || result.display_name || current.address,
+          pincode: pincode || current.pincode,
+        }));
+        setLocationMessage(pincode ? "Address and PIN code found. Check the details before ordering." : "Address found. Enter your six-digit PIN code to continue.");
+      } catch {
+        setLocationMessage("Location captured, but the address lookup failed. Enter your address and PIN code manually.");
+      } finally {
+        setLocating(false);
+      }
+    }, (geoError) => {
+      setLocationMessage(geoError.code === geoError.PERMISSION_DENIED
+        ? "Location permission was denied. Enter your address and PIN code manually."
+        : "Could not find your location. Enter your address and PIN code manually.");
+      setLocating(false);
+    }, { enableHighAccuracy: true, timeout: 15000 });
+  };
 
   const subtotal = useMemo(() => {
     return cart.reduce((total, item) => total + Number(item.price || 0), 0);
@@ -29,20 +83,20 @@ export default function Checkout() {
     e.preventDefault();
     setError("");
     if (!user?.token) {
-      setError("Please log in before placing an order.");
+      setError(user ? "Your sign-in session needs refreshing. Please sign in again before placing your order." : "Please log in before placing an order.");
       return;
     }
 
     try {
       setLoading(true);
       const digits = form.card.replace(/\D/g, "");
-      const response = await fetch("http://localhost:5000/api/orders", {
+      const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${user.token}` },
         body: JSON.stringify({
           account: { name: user.name || form.name, email: user.email, phone: user.phone || "" },
           items: cart,
-          delivery: { name: form.name, address: form.address },
+          delivery: { name: form.name, address: form.address, pincode: form.pincode, location: form.location },
           payment: { method: form.paymentMethod, cardLast4: digits.slice(-4), upiId: form.paymentMethod === "UPI" ? form.upi : "" },
           subtotal,
           deliveryFee,
@@ -105,6 +159,29 @@ export default function Checkout() {
                   style={{ width: "100%", padding: "10px 12px", borderRadius: "12px", border: "1px solid #dcd3c5" }}
                 />
               </label>
+
+              <button type="button" className="secondary-btn" onClick={handleUseLocation} disabled={locating} style={{ marginBottom: "8px" }}>
+                {locating ? "Finding location..." : "Use my location"}
+              </button>
+              {locationMessage && <p role="status" style={{ margin: "0 0 12px", color: "#516159", fontSize: "0.86rem" }}>{locationMessage}</p>}
+              <label style={{ display: "block", marginBottom: "14px" }}>
+                <span style={{ display: "block", marginBottom: "6px", fontWeight: 700 }}>PIN code</span>
+                <input
+                  required
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={form.pincode}
+                  onChange={(e) => setForm({ ...form, pincode: e.target.value.replace(/\D/g, "") })}
+                  placeholder="6-digit PIN code"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "12px", border: "1px solid #dcd3c5" }}
+                />
+              </label>
+              <p style={{ margin: "-6px 0 14px", color: "#6b776d", fontSize: "0.78rem" }}>
+                Your coordinates are shared with <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> only when you request location lookup.
+              </p>
 
               <div style={{ marginBottom: "14px" }}>
                 <span style={{ display: "block", marginBottom: "8px", fontWeight: 700 }}>Payment method</span>

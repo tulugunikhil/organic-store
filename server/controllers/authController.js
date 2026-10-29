@@ -25,15 +25,32 @@ const sanitizeUser = (user) => ({
   gstNumber: user.gstNumber || "",
 });
 
-const findUserByEmail = async (email) => {
+const normalizeIdentifier = (identifier) => {
+  const value = String(identifier || "").trim();
+  return value.includes("@") ? value.toLowerCase() : value.replace(/\D/g, "");
+};
+
+const findUserByIdentifier = async (identifier) => {
+  const value = String(identifier || "").trim();
+  const normalizedIdentifier = normalizeIdentifier(value);
+  if (!value || !normalizedIdentifier) return null;
+
   try {
-    const user = await User.findOne({ email });
+    const user = value.includes("@")
+      ? await User.findOne({ email: new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") })
+      : (await User.find({ phone: { $exists: true, $ne: "" } })).find(
+          (entry) => normalizeIdentifier(entry.phone) === normalizedIdentifier
+        );
     if (user) return user;
   } catch (error) {
     // Fall through to demo users when MongoDB is not configured.
   }
 
-  return demoUsers.find((user) => user.email.toLowerCase() === email.toLowerCase()) || null;
+  return demoUsers.find((user) =>
+    value.includes("@")
+      ? normalizeIdentifier(user.email) === normalizedIdentifier
+      : normalizeIdentifier(user.phone) === normalizedIdentifier
+  ) || null;
 };
 
 const createUserRecord = async (data) => {
@@ -51,7 +68,7 @@ const createUserRecord = async (data) => {
 };
 
 const findOrCreateLoginUser = async ({ email, password, role, gstNumber }) => {
-  let user = await findUserByEmail(email);
+  let user = await findUserByIdentifier(email);
 
   if (!user || user.password !== password) {
     const demoAdminEmail = "admin@pureharvest.com";
@@ -108,9 +125,14 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "GST number is required for sellers." });
     }
 
-    const existingUser = await findUserByEmail(email);
+    const existingUser = await findUserByIdentifier(email);
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
+    }
+
+    const existingPhoneUser = phone ? await findUserByIdentifier(phone) : null;
+    if (existingPhoneUser) {
+      return res.status(400).json({ message: "Phone number is already registered" });
     }
 
     const user = await createUserRecord({
@@ -180,7 +202,7 @@ exports.verifySellerOtp = async (req, res) => {
     }
 
     pendingOtps.delete(email.toLowerCase());
-    const user = await findUserByEmail(email);
+    const user = await findUserByIdentifier(email);
     if (!user || user.role !== "seller") return res.status(401).json({ message: "Seller account not found." });
 
     res.json(createTokenResponse(user));
@@ -191,22 +213,24 @@ exports.verifySellerOtp = async (req, res) => {
 
 exports.requestBuyerOtp = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ message: "Email and password are required." });
+    const identifier = req.body.identifier || req.body.email;
+    const { password } = req.body;
+    if (!identifier || !password) return res.status(400).json({ message: "Email or mobile number and password are required." });
 
-    let user = await findOrCreateLoginUser({ email, password, role: "buyer" });
-    if (!user && !process.env.MONGO_URI) {
-      user = await createUserRecord({ name: email.split("@")[0], email, password, role: "buyer", gstNumber: "" });
+    let user = await findOrCreateLoginUser({ email: identifier, password, role: "buyer" });
+    if (!user && !process.env.MONGO_URI && String(identifier).includes("@")) {
+      user = await createUserRecord({ name: identifier.split("@")[0], email: identifier, password, role: "buyer", gstNumber: "" });
     }
     if (!user || user.role !== "buyer") return res.status(401).json({ message: "Invalid buyer credentials" });
 
     const otp = String(Math.floor(100000 + Math.random() * 900000));
-    pendingOtps.set(email.toLowerCase(), { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
-    const sent = await sendOtpEmail(email, otp);
+    const otpKey = normalizeIdentifier(identifier);
+    pendingOtps.set(otpKey, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
+    const sent = await sendOtpEmail(user.email, otp);
 
     res.json({
-      message: sent ? "OTP sent to your email." : "SMTP is not configured. Use the development OTP to continue.",
-      email,
+      message: sent ? "OTP sent to your registered email address." : "SMTP is not configured. Use the development OTP to continue.",
+      identifier,
       delivery: sent ? "email" : "development",
       ...(sent || process.env.NODE_ENV === "production" ? {} : { developmentOtp: otp }),
     });
@@ -217,15 +241,17 @@ exports.requestBuyerOtp = async (req, res) => {
 
 exports.verifyBuyerOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
-    const pendingOtp = pendingOtps.get(email?.toLowerCase());
+    const identifier = req.body.identifier || req.body.email;
+    const { otp } = req.body;
+    const otpKey = normalizeIdentifier(identifier);
+    const pendingOtp = pendingOtps.get(otpKey);
 
     if (!pendingOtp || pendingOtp.expiresAt < Date.now() || pendingOtp.otp !== String(otp)) {
       return res.status(401).json({ message: "Invalid or expired OTP." });
     }
 
-    pendingOtps.delete(email.toLowerCase());
-    const user = await findUserByEmail(email);
+    pendingOtps.delete(otpKey);
+    const user = await findUserByIdentifier(identifier);
     if (!user || user.role !== "buyer") return res.status(401).json({ message: "Buyer account not found." });
 
     res.json(createTokenResponse(user));

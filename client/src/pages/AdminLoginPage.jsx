@@ -7,8 +7,9 @@ export default function AdminLoginPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: "admin@pureharvest.com", password: "admin123" });
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
@@ -17,19 +18,26 @@ export default function AdminLoginPage() {
       return;
     }
 
-    if (form.email.toLowerCase() !== "admin@pureharvest.com" || form.password !== "admin123") {
-      setError("Admin credentials are invalid. Use admin@pureharvest.com / admin123");
-      return;
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, password: form.password, role: "admin" }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.user?.role !== "admin") {
+        throw new Error(data.message || "Admin credentials are invalid.");
+      }
+
+      login({ token: data.token, ...data.user });
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message || "Admin login failed.");
+    } finally {
+      setLoading(false);
     }
 
-    login({
-      email: form.email,
-      phone: "Not provided",
-      name: "Admin",
-      role: "admin",
-    });
-
-    navigate("/dashboard");
   };
 
   return (
@@ -88,8 +96,8 @@ export default function AdminLoginPage() {
               />
             </label>
 
-            <button className="primary-btn" type="submit" style={{ width: "100%", marginTop: "6px" }}>
-              Login as Admin
+            <button className="primary-btn" type="submit" disabled={loading} style={{ width: "100%", marginTop: "6px" }}>
+              {loading ? "Signing in..." : "Login as Admin"}
             </button>
           </form>
 

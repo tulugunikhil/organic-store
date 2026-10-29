@@ -11,8 +11,8 @@ export default function DebugPage() {
     const loadData = async () => {
       try {
         const [productsRes, usersRes] = await Promise.all([
-          fetch("http://localhost:5000/api/products"),
-          fetch("http://localhost:5000/api/auth/users"),
+          fetch("/api/products"),
+          fetch("/api/auth/users"),
         ]);
 
         if (!productsRes.ok || !usersRes.ok) {

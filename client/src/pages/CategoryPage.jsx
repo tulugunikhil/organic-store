@@ -37,6 +37,38 @@ const categorySeeds = [
     image: "https://images.unsplash.com/photo-1471193945509-9ad0617afabf?auto=format&fit=crop&w=800&q=80",
   },
   {
+    _id: "rice-5",
+    name: "Quinoa",
+    description: "Protein-rich quinoa for wholesome bowls, salads, and everyday meals.",
+    price: 499,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1516684731961-8d1cbf0d0b9f?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "rice-6",
+    name: "HMT Rice",
+    description: "A light, aromatic variety suited to everyday meals.",
+    price: 549,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1586201375761-83865001f7d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "rice-7",
+    name: "Samba Masuri Rice",
+    description: "Medium-grain rice with a soft texture for daily cooking.",
+    price: 529,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1604908556855-8d0f8b1c3d13?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "rice-8",
+    name: "Swarna Rice",
+    description: "Everyday rice with a satisfying texture for family meals.",
+    price: 479,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1586201375761-83865001f7d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
     _id: "fruit-1",
     name: "Fresh Bananas",
     description: "Naturally sweet bananas packed with potassium and fiber.",
@@ -133,6 +165,14 @@ const categorySeeds = [
     image: "https://images.unsplash.com/photo-1528747045269-390fe33c19f2?auto=format&fit=crop&w=800&q=80",
   },
   {
+    _id: "oil-5",
+    name: "Sunflower Oil",
+    description: "Light everyday cooking oil with a clean, mild flavor.",
+    price: 449,
+    category: "Oils",
+    image: "https://images.unsplash.com/photo-1474978528675-4a50a4508dc3?auto=format&fit=crop&w=800&q=80",
+  },
+  {
     _id: "dairy-1",
     name: "Farm Fresh Milk",
     description: "Creamy, naturally rich milk from trusted local farms.",
@@ -206,7 +246,7 @@ export default function CategoryPage() {
   const [products, setProducts] = useState(categorySeeds);
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/products")
+    fetch("/api/products")
       .then((res) => res.json())
       .then((data) => {
         const productList = Array.isArray(data) && data.length > 0 ? data : categorySeeds;

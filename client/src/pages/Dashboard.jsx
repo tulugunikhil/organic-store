@@ -7,11 +7,12 @@ import { AuthContext } from "../context/AuthContext";
 export default function Dashboard() {
   const { user } = useContext(AuthContext);
   const [products, setProducts] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState(false);
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/products")
+    fetch("/api/products")
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
@@ -19,10 +20,19 @@ export default function Dashboard() {
         }
       })
       .catch(() => setProducts([]));
+
+    fetch("/api/auth/users")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCustomers(data);
+        }
+      })
+      .catch(() => setCustomers([]));
   }, []);
 
   const handleAddProduct = async (product) => {
-    const res = await fetch("http://localhost:5000/api/products", {
+    const res = await fetch("/api/products", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(product),
@@ -41,14 +51,16 @@ export default function Dashboard() {
     const totalInventoryValue = products.reduce((sum, product) => sum + Number(product.price || 0), 0);
     const bestSeller = products[0]?.name || "No items";
     const lowStockCount = products.filter((product) => Number(product.price || 0) < 300).length;
+    const totalCustomers = customers.length;
 
     return {
       totalProducts,
       totalInventoryValue,
       bestSeller,
       lowStockCount,
+      totalCustomers,
     };
-  }, [products]);
+  }, [products, customers]);
 
   const inventoryRows = products.slice(0, 8).map((product, index) => ({
     ...product,
@@ -113,9 +125,9 @@ export default function Dashboard() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "24px" }}>
           {[
             { label: "Products", value: summary.totalProducts, hint: "Live items", accent: "#eaf8eb" },
-            { label: "Revenue", value: `₹${summary.totalInventoryValue.toLocaleString()}`, hint: "Inventory value", accent: "#eef4ff" },
-            { label: "Best seller", value: summary.bestSeller, hint: "Top category", accent: "#fff7e8" },
-            { label: "Low stock", value: summary.lowStockCount, hint: "Needs restock", accent: "#fff0f2" },
+            { label: "Customers", value: summary.totalCustomers, hint: "Registered users", accent: "#eef4ff" },
+            { label: "Revenue", value: `₹${summary.totalInventoryValue.toLocaleString()}`, hint: "Inventory value", accent: "#fff7e8" },
+            { label: "Best seller", value: summary.bestSeller, hint: "Top category", accent: "#fff0f2" },
           ].map((card) => (
             <div key={card.label} style={{ background: card.accent, border: "1px solid #e7eadf", borderRadius: "18px", padding: "18px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)" }}>
               <div style={{ color: "#6b776d", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>{card.label}</div>
@@ -180,6 +192,49 @@ export default function Dashboard() {
             </div>
           </aside>
         </div>
+
+        <section style={{ background: "white", border: "1px solid #ebefea", borderRadius: "20px", padding: "20px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)", marginTop: "28px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
+            <div>
+              <h3 style={{ margin: 0, color: "#173626", fontSize: "1.2rem" }}>Customer database</h3>
+              <div style={{ color: "#6b776d", fontSize: "0.88rem", marginTop: "4px" }}>Registered customers and their contact details</div>
+            </div>
+            <span style={{ background: "#edf8eb", color: "#2e7d32", borderRadius: "999px", padding: "6px 10px", fontWeight: 700, fontSize: "0.75rem" }}>{customers.length} customers</span>
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "620px" }}>
+              <thead>
+                <tr style={{ background: "#f7f9f4", color: "#516159" }}>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Name</th>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Email</th>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Phone</th>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customers.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ padding: "18px 10px", color: "#6b776d", textAlign: "center" }}>No customer records found.</td>
+                  </tr>
+                ) : (
+                  customers.map((customer) => (
+                    <tr key={customer.id || customer.email} style={{ borderBottom: "1px solid #eef1ea" }}>
+                      <td style={{ padding: "12px 10px", fontWeight: 700, color: "#213c2d" }}>{customer.name || "Unknown"}</td>
+                      <td style={{ padding: "12px 10px", color: "#5a695f" }}>{customer.email}</td>
+                      <td style={{ padding: "12px 10px", color: "#213c2d" }}>{customer.phone || "Not provided"}</td>
+                      <td style={{ padding: "12px 10px" }}>
+                        <span style={{ display: "inline-block", padding: "6px 10px", borderRadius: "999px", background: customer.role === "admin" ? "#eef4ff" : "#eaf8eb", color: customer.role === "admin" ? "#3154b1" : "#2e7d32", fontSize: "0.75rem", fontWeight: 800, textTransform: "capitalize" }}>
+                          {customer.role || "buyer"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
 
       <AddProductModal open={modalOpen} onClose={() => setModalOpen(false)} onSubmit={handleAddProduct} />

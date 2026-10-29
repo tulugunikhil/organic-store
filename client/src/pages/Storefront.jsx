@@ -29,6 +29,38 @@ const fallbackProducts = [
     image: "https://images.unsplash.com/photo-1604908556855-8d0f8b1c3d13?auto=format&fit=crop&w=800&q=80",
   },
   {
+    _id: "1c",
+    name: "Quinoa",
+    description: "Protein-rich quinoa for wholesome bowls, salads, and everyday meals.",
+    price: 499,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1516684731961-8d1cbf0d0b9f?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "1d",
+    name: "HMT Rice",
+    description: "A light, aromatic variety suited to everyday meals.",
+    price: 549,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1586201375761-83865001f7d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "1e",
+    name: "Samba Masuri Rice",
+    description: "Medium-grain rice with a soft texture for daily cooking.",
+    price: 529,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1604908556855-8d0f8b1c3d13?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "1f",
+    name: "Swarna Rice",
+    description: "Everyday rice with a satisfying texture for family meals.",
+    price: 479,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1586201375761-83865001f7d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
     _id: "2",
     name: "Organic Red Lentils",
     description: "Protein-rich lentils ideal for soups, curries, and hearty bowls.",
@@ -141,6 +173,22 @@ const fallbackProducts = [
     image: "https://images.unsplash.com/photo-1600335895229-6f7d0f5f7d2e?auto=format&fit=crop&w=800&q=80",
   },
   {
+    _id: "5c",
+    name: "Extra Virgin Olive Oil",
+    description: "Smooth olive oil for dressings, cooking, and finishing dishes.",
+    price: 699,
+    category: "Oils",
+    image: "https://images.unsplash.com/photo-1528747045269-390fe33c19f2?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "5d",
+    name: "Sunflower Oil",
+    description: "Light everyday cooking oil with a clean, mild flavor.",
+    price: 449,
+    category: "Oils",
+    image: "https://images.unsplash.com/photo-1474978528675-4a50a4508dc3?auto=format&fit=crop&w=800&q=80",
+  },
+  {
     _id: "6",
     name: "Farm Fresh Milk",
     description: "Creamy, naturally rich milk from trusted local farms.",
@@ -202,6 +250,14 @@ export default function Storefront() {
   ];
 
   useEffect(() => {
+    const dealTimer = setInterval(() => {
+      setActiveDealIndex((index) => (index + 1) % deals.length);
+    }, 5000);
+
+    return () => clearInterval(dealTimer);
+  }, [deals.length]);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       const [hours, minutes, seconds] = timeLeft.split(":").map(Number);
       let totalSeconds = hours * 3600 + minutes * 60 + seconds;
@@ -230,7 +286,7 @@ export default function Storefront() {
   ];
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/products")
+    fetch("/api/products")
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
@@ -268,36 +324,27 @@ export default function Storefront() {
               </div>
             </div>
 
-            <div
-              style={{
-                background: deals[activeDealIndex].accent,
-                borderRadius: "20px",
-                padding: "22px 20px",
-                color: "white",
-                minHeight: "180px",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                boxShadow: "0 18px 35px rgba(29, 143, 86, 0.18)",
-                transition: "all 0.5s ease",
-                position: "relative",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(120deg, rgba(255,255,255,0.14), transparent 60%)", pointerEvents: "none" }} />
-              <div style={{ position: "relative", zIndex: 1 }}>
-                <div style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.9 }}>
-                  {deals[activeDealIndex].product}
-                </div>
-                <h4 style={{ margin: "12px 0 8px", fontSize: "1.9rem", lineHeight: 1.15 }}>{deals[activeDealIndex].title}</h4>
-                <p style={{ margin: 0, fontSize: "1rem", opacity: 0.92 }}>{deals[activeDealIndex].subtitle}</p>
-              </div>
-
-              <div style={{ position: "relative", zIndex: 1, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginTop: "12px" }}>
-                <span style={{ background: "rgba(255,255,255,0.14)", borderRadius: "999px", padding: "8px 12px", fontWeight: 800 }}>
-                  Live offer
-                </span>
-                <span style={{ fontWeight: 800, fontSize: "1.1rem" }}>₹{deals[activeDealIndex].subtitle.includes("50%") ? "799" : "399"}</span>
+            <div className="daily-deal-viewport" aria-roledescription="carousel" aria-label="Daily deals">
+              <div className="daily-deal-track" style={{ transform: `translateX(-${activeDealIndex * 100}%)` }}>
+                {deals.map((deal, index) => (
+                  <article
+                    key={deal.title}
+                    className="daily-deal-slide"
+                    aria-hidden={index !== activeDealIndex}
+                    style={{ background: deal.accent }}
+                  >
+                    <div className="daily-deal-shine" />
+                    <div className="daily-deal-copy">
+                      <div className="daily-deal-category">{deal.product}</div>
+                      <h4>{deal.title}</h4>
+                      <p>{deal.subtitle}</p>
+                    </div>
+                    <div className="daily-deal-footer">
+                      <span className="daily-deal-live">Live offer</span>
+                      <span className="daily-deal-price">₹{deal.subtitle.includes("50%") ? "599" : "399"}</span>
+                    </div>
+                  </article>
+                ))}
               </div>
             </div>
 
@@ -305,10 +352,14 @@ export default function Storefront() {
               {deals.map((deal, index) => {
                 const isActive = index === activeDealIndex;
                 return (
-                  <div
+                  <button
                     key={deal.title}
+                    type="button"
                     onClick={() => setActiveDealIndex(index)}
+                    aria-pressed={isActive}
                     style={{
+                      textAlign: "left",
+                      fontFamily: "inherit",
                       background: isActive ? "#ffffff" : "#eef7ed",
                       border: isActive ? "1px solid #d9e9d5" : "1px solid #e7eee7",
                       borderRadius: "14px",
@@ -321,7 +372,7 @@ export default function Storefront() {
                   >
                     <div style={{ color: isActive ? "#1d8f56" : "#6b776d", fontSize: "0.72rem", fontWeight: 800, textTransform: "uppercase" }}>{deal.product}</div>
                     <div style={{ marginTop: "6px", fontWeight: 800, color: "#1f2d1f" }}>{deal.title}</div>
-                  </div>
+                  </button>
                 );
               })}
             </div>

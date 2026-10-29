@@ -20,9 +20,17 @@ const sanitizeOrder = (order) => ({
 exports.createOrder = async (req, res) => {
   try {
     const { account, items, delivery, payment, subtotal, deliveryFee, total } = req.body;
+    if (!/^\d{6}$/.test(delivery?.pincode || "")) {
+      return res.status(400).json({ message: "A valid six-digit PIN code is required." });
+    }
+
     if (!account?.name || !account?.email || !items?.length || !delivery?.name || !delivery?.address || !payment?.method) {
       return res.status(400).json({ message: "Account, items, delivery, and payment details are required." });
     }
+
+    const latitude = Number(delivery.location?.latitude);
+    const longitude = Number(delivery.location?.longitude);
+    const location = Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : undefined;
 
     const orderData = {
       userId: String(req.user.id),
@@ -41,6 +49,8 @@ exports.createOrder = async (req, res) => {
       delivery: {
         name: delivery.name,
         address: delivery.address,
+        pincode: delivery.pincode,
+        ...(location && { location }),
       },
       payment: {
         method: payment.method,

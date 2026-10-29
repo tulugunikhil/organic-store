@@ -20,6 +20,11 @@ const orderSchema = new mongoose.Schema(
     delivery: {
       name: { type: String, required: true },
       address: { type: String, required: true },
+      pincode: { type: String, required: true },
+      location: {
+        latitude: { type: Number },
+        longitude: { type: Number },
+      },
     },
     payment: {
       method: { type: String, required: true },

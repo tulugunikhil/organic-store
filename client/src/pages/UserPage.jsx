@@ -15,7 +15,7 @@ export default function UserPage() {
       return;
     }
 
-    fetch("http://localhost:5000/api/orders/mine", { headers: { Authorization: `Bearer ${user.token}` } })
+    fetch("/api/orders/mine", { headers: { Authorization: `Bearer ${user.token}` } })
       .then((response) => (response.ok ? response.json() : []))
       .then((data) => setOrders(Array.isArray(data) ? data : []))
       .catch(() => setOrders([]))

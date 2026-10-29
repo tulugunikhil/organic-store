@@ -26,6 +26,38 @@ const fallbackProducts = [
     image: "https://images.unsplash.com/photo-1604908556855-8d0f8b1c3d13?auto=format&fit=crop&w=800&q=80",
   },
   {
+    _id: "sample-1c",
+    name: "Quinoa",
+    description: "Protein-rich quinoa for wholesome bowls, salads, and everyday meals.",
+    price: 499,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1516684731961-8d1cbf0d0b9f?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "sample-1d",
+    name: "HMT Rice",
+    description: "A light, aromatic variety suited to everyday meals.",
+    price: 549,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1586201375761-83865001f7d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "sample-1e",
+    name: "Samba Masuri Rice",
+    description: "Medium-grain rice with a soft texture for daily cooking.",
+    price: 529,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1604908556855-8d0f8b1c3d13?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "sample-1f",
+    name: "Swarna Rice",
+    description: "Everyday rice with a satisfying texture for family meals.",
+    price: 479,
+    category: "Rice",
+    image: "https://images.unsplash.com/photo-1586201375761-83865001f7d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
     _id: "sample-2",
     name: "Organic Red Lentils",
     description: "Protein-rich lentils ideal for soups, curries, and hearty bowls.",
@@ -138,6 +170,22 @@ const fallbackProducts = [
     image: "https://images.unsplash.com/photo-1600335895229-6f7d0f5f7d2e?auto=format&fit=crop&w=800&q=80",
   },
   {
+    _id: "sample-5c",
+    name: "Extra Virgin Olive Oil",
+    description: "Smooth olive oil for dressings, cooking, and finishing dishes.",
+    price: 699,
+    category: "Oils",
+    image: "https://images.unsplash.com/photo-1528747045269-390fe33c19f2?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    _id: "sample-5d",
+    name: "Sunflower Oil",
+    description: "Light everyday cooking oil with a clean, mild flavor.",
+    price: 449,
+    category: "Oils",
+    image: "https://images.unsplash.com/photo-1474978528675-4a50a4508dc3?auto=format&fit=crop&w=800&q=80",
+  },
+  {
     _id: "sample-6",
     name: "Farm Fresh Milk",
     description: "Creamy, naturally rich milk from trusted local farms.",
@@ -177,7 +225,12 @@ exports.getProducts = async (req, res) => {
     if (products.length === 0) {
       return res.json(fallbackProducts);
     }
-    res.json(products);
+    const normalizeName = (name) => String(name || "").toLowerCase().replace(/\b(cold pressed|extra virgin|virgin)\b/g, "").replace(/\s+/g, " ").trim();
+    const existingNames = new Set(products.map((product) => normalizeName(product.name)));
+    const missingDefaultProducts = fallbackProducts.filter((product) =>
+      ["Rice", "Oils"].includes(product.category) && !existingNames.has(normalizeName(product.name))
+    );
+    res.json([...products, ...missingDefaultProducts]);
   } catch (error) {
     return res.status(500).json({ message: error.message, products: fallbackProducts });
   }

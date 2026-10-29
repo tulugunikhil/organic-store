@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pureharvest-web
+  namespace: pureharvest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pureharvest-web
+  template:
+    metadata:
+      labels:
+        app: pureharvest-web
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-pull
+      containers:
+        - name: web
+          image: docker.io/library/nginx:stable-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pureharvest-web
+  namespace: pureharvest
+spec:
+  type: NodePort
+  selector:
+    app: pureharvest-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30080

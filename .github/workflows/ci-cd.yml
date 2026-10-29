@@ -1,0 +1,92 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+
+      - name: Install and build frontend
+        working-directory: client
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install and verify backend
+        run: |
+          cd server
+          npm ci
+          find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check
+
+      - name: Set up Docker Buildx
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push API image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          push: true
+          tags: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/pureharvest-api:${{ github.sha }}
+
+      - name: Build and push web image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./client
+          push: true
+          tags: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/pureharvest-web:${{ github.sha }}
+
+      - name: Trigger Jenkins deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          JENKINS_URL: ${{ secrets.JENKINS_URL }}
+          JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
+          JENKINS_USER: ${{ secrets.JENKINS_USER }}
+          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ]; then
+            echo "::error::DOCKERHUB_USERNAME is required to publish and deploy images."
+            exit 1
+          fi
+          if [ -z "$JENKINS_URL" ] || [ -z "$JENKINS_JOB" ] || [ -z "$JENKINS_USER" ] || [ -z "$JENKINS_API_TOKEN" ]; then
+            echo "::error::Jenkins deployment was skipped because one or more Jenkins repository secrets are not configured."
+            exit 1
+          fi
+
+          JENKINS_URL=${JENKINS_URL%/}
+          job_path=$(printf '%s' "$JENKINS_JOB" | sed 's#/#/job/#g')
+          curl --fail --silent --show-error \
+            --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
+            --request POST \
+            --data-urlencode "GIT_SHA=$GITHUB_SHA" \
+            --data-urlencode "DOCKERHUB_USERNAME=$DOCKERHUB_USERNAME" \
+            "$JENKINS_URL/job/$job_path/buildWithParameters"
