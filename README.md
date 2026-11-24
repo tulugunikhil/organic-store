@@ -44,43 +44,30 @@ The app will run at:
 - Frontend: http://localhost:5173
 - Backend: http://localhost:5000
 
-## CI/CD deployment (GitHub Actions + Jenkins + Kubernetes + Docker Hub)
+## Automatic deployment (GitHub Actions + AWS EKS)
 
-GitHub Actions builds the frontend and checks backend JavaScript on pull requests and pushes to `main`. After validation on `main`, it builds both Docker images, publishes commit-tagged images to Docker Hub, then triggers Jenkins with that exact commit SHA. Jenkins deploys those images to Kubernetes and waits for both rollouts to finish. The web service is exposed on NodePort `30080`; the API remains an internal cluster service.
+Pull requests build the frontend and check backend JavaScript. After those checks pass, a push to `main` builds both container images, pushes them to private Amazon ECR repositories, and deploys them to EKS. GitHub Actions assumes a narrowly scoped AWS role using OIDC; no long-lived AWS access key, Docker Hub credential, or public Jenkins endpoint is needed. The web app is exposed on NodePort `30080`, and its Nginx container proxies `/api` requests to the internal API service.
 
-### Setup
+### AWS infrastructure setup
 
-1. Create a Kubernetes cluster (for example, k3s on a Linux VM) and make sure its API is reachable from the Jenkins agent. Install `kubectl` on the agent.
-2. As a cluster administrator, create the application namespace and Jenkins' namespace-scoped deployer account:
+The Terraform configuration in `infra/terraform` creates a VPC with two public subnets, an EKS cluster and two on-demand `t3.medium` worker nodes, two private ECR repositories, and a GitHub OIDC role. The role trust is restricted to this repository's immutable GitHub subject for `main` and its Kubernetes administrator access is scoped to the `pureharvest` namespace.
+
+1. Install Terraform 1.5+ and configure AWS CLI credentials with permission to create the listed EKS, EC2/VPC, ECR, IAM, and CloudWatch resources.
+2. From `infra/terraform`, run `terraform init`, `terraform validate`, and `terraform plan`. Review the plan and the estimated ongoing charges below before applying. No AWS resources are created by `plan`.
+3. Only after approving the reviewed plan, run `terraform apply`. The AWS identity that applies it receives cluster-creator administrator access for the initial namespace setup.
+4. Configure `kubectl` and create the namespace:
    ```sh
+   aws eks update-kubeconfig --region us-east-1 --name pureharvest-prod
    kubectl apply -f k8s/namespace.yaml
-   kubectl apply -f k8s/jenkins-rbac.yaml
    ```
-   Create a kubeconfig for the `jenkins-deployer` service account and store it in Jenkins as a **Secret file** credential with ID `pureharvest-kubeconfig`. Use the cluster's supported service-account token workflow and keep this kubeconfig private; it only needs to manage deployments, services, and pods in the `pureharvest` namespace.
-3. Create Docker Hub repositories named `<username>/pureharvest-api` and `<username>/pureharvest-web`. For private repositories, create a read-only Docker Hub access token and a Kubernetes pull secret:
-   ```sh
-   kubectl -n pureharvest create secret generic dockerhub-pull \
-     --from-file=.dockerconfigjson=<path-to-protected-docker-config.json> \
-     --type=kubernetes.io/dockerconfigjson
-   ```
-   Keep that config file private and out of source control. For public repositories, remove the `imagePullSecrets` entries from the Kubernetes Deployment manifests instead.
-4. Configure the API's Kubernetes Secret with production settings. At minimum, set a strong `JWT_SECRET`; add `MONGO_URI` for persistence and the `SMTP_*` settings for real OTP email delivery:
-   ```sh
-   kubectl -n pureharvest create secret generic pureharvest-api-secrets \
-     --from-env-file=<path-to-protected-api-env-file>
-   ```
-   Put the required `JWT_SECRET` and any optional `MONGO_URI`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` values in that file. Protect it and keep it out of source control. Store Kubernetes secrets securely.
-5. In GitHub repository Actions secrets, add:
-   - `DOCKERHUB_USERNAME`: Docker Hub namespace that owns both image repositories
-   - `DOCKERHUB_TOKEN`: Docker Hub access token with permission to push to both repositories
-   - `JENKINS_URL`: Jenkins base URL, such as `https://jenkins.example.com`
-   - `JENKINS_JOB`: job name (`pureharvest-deploy`; use slash-separated folders for a nested job)
-   - `JENKINS_USER`: Jenkins username
-   - `JENKINS_API_TOKEN`: that user's API token
-6. Create a Jenkins Pipeline job named `pureharvest-deploy`. Configure it to use this Git repository, the `main` branch, and `Jenkinsfile` from SCM. The first manual build registers the Jenkinsfile parameters and may stop because `DOCKERHUB_USERNAME` has no value yet; run it again with the Docker Hub namespace to verify the initial deployment. The Jenkins user/API token needs `Overall/Read`, `Job/Read`, and `Job/Build` permissions.
-7. Configure cluster networking/firewall to allow inbound TCP port `30080` to the Kubernetes nodes, then open `http://<node-ip>:30080`. For production, expose the web service using an Ingress controller and configure HTTPS with a domain.
+5. In the GitHub repository, add the Terraform output `github_deploy_role_arn` as an Actions **variable** named `AWS_DEPLOY_ROLE_ARN`. Add Actions **secrets** named `MONGO_URI` and `JWT_SECRET`. Use an externally reachable MongoDB connection string with TLS and a strong JWT secret; do not commit them or paste them into workflow files. If login OTP emails are required, also set the `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` secrets.
+6. Push to `main`. The deploy workflow validates configuration, assumes the AWS role via OIDC, pushes images to ECR, updates the API secret, deploys both manifests, and waits for both rollouts.
 
-Pull requests run validation only and never publish images or deploy. A push to `main` fails rather than silently skipping image publication or Jenkins deployment if required credentials are missing. To run locally with Docker Compose, use `docker compose up --build -d` from the repository root; the app is available at `http://localhost:8080`.
+The Terraform defaults target EKS 1.37 in `us-east-1` and two `t3.medium` nodes. Estimate at 730 hours/month: approximately $73 for the EKS standard-support control plane, $60.74 for worker compute, $7.30 for the workers' public IPv4 addresses, and $3.20 for 40 GB of gp3 disks — about **$144/month before ECR storage, CloudWatch logs, data transfer, taxes, and other usage**. Pricing varies by region and date. The cluster remains billable while running; `terraform destroy` removes it but also deletes its ECR repositories and images.
+
+After deployment, obtain a node's public IP with `kubectl get nodes -o wide` and open `http://<node-public-ip>:30080`. The API service is internal to the cluster. The EKS public API endpoint defaults to accepting network connections from any IPv4 address, but still requires IAM authentication; use `cluster_endpoint_public_access_cidrs` to restrict it when you have stable client IPs. The worker nodes' public egress IPs can change when nodes are replaced, so update any MongoDB IP allowlist accordingly. This baseline does not provide a custom domain or HTTPS; add a load balancer and TLS before using it as a public production storefront. GitHub Actions deployments require the `pureharvest` namespace to exist before the first run.
+
+Jenkins is not part of this deployment path. To run locally with Docker Compose, use `docker compose up --build -d` from the repository root; the app is available at `http://localhost:8080`.
 
 ## Demo login shortcuts
 - Admin email: admin@pureharvest.com

@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -25,68 +25,116 @@ jobs:
             client/package-lock.json
             server/package-lock.json
 
-      - name: Install and build frontend
+      - name: Build frontend
         working-directory: client
         run: |
           npm ci
           npm run build
 
-      - name: Install and verify backend
+      - name: Verify backend JavaScript
+        working-directory: server
         run: |
-          cd server
           npm ci
-          find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check
+          node check-syntax.js
 
-      - name: Set up Docker Buildx
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/setup-buildx-action@v3
+  deploy:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pureharvest-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
+      - name: Validate deployment configuration
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          if [ -z "$AWS_DEPLOY_ROLE_ARN" ]; then
+            echo "::error::Set the AWS_DEPLOY_ROLE_ARN Actions variable to the Terraform output."
+            exit 1
+          fi
+          if [ -z "$MONGO_URI" ] || [ -z "$JWT_SECRET" ]; then
+            echo "::error::Set the MONGO_URI and JWT_SECRET Actions secrets before deploying."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: PureHarvest-${{ github.run_id }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.37.0
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push API image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: ./server
           push: true
-          tags: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/pureharvest-api:${{ github.sha }}
+          tags: ${{ steps.login-ecr.outputs.registry }}/pureharvest-api:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build and push web image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: ./client
           push: true
-          tags: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/pureharvest-web:${{ github.sha }}
+          tags: ${{ steps.login-ecr.outputs.registry }}/pureharvest-web:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Trigger Jenkins deployment
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Configure EKS access
+        run: aws eks update-kubeconfig --region us-east-1 --name pureharvest-prod
+
+      - name: Update API configuration secret
         env:
-          JENKINS_URL: ${{ secrets.JENKINS_URL }}
-          JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
-          JENKINS_USER: ${{ secrets.JENKINS_USER }}
-          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
         run: |
-          if [ -z "$DOCKERHUB_USERNAME" ]; then
-            echo "::error::DOCKERHUB_USERNAME is required to publish and deploy images."
-            exit 1
-          fi
-          if [ -z "$JENKINS_URL" ] || [ -z "$JENKINS_JOB" ] || [ -z "$JENKINS_USER" ] || [ -z "$JENKINS_API_TOKEN" ]; then
-            echo "::error::Jenkins deployment was skipped because one or more Jenkins repository secrets are not configured."
-            exit 1
-          fi
+          secret_args=(
+            --from-literal="MONGO_URI=$MONGO_URI"
+            --from-literal="JWT_SECRET=$JWT_SECRET"
+          )
+          if [ -n "$SMTP_HOST" ]; then secret_args+=(--from-literal="SMTP_HOST=$SMTP_HOST"); fi
+          if [ -n "$SMTP_PORT" ]; then secret_args+=(--from-literal="SMTP_PORT=$SMTP_PORT"); fi
+          if [ -n "$SMTP_SECURE" ]; then secret_args+=(--from-literal="SMTP_SECURE=$SMTP_SECURE"); fi
+          if [ -n "$SMTP_USER" ]; then secret_args+=(--from-literal="SMTP_USER=$SMTP_USER"); fi
+          if [ -n "$SMTP_PASS" ]; then secret_args+=(--from-literal="SMTP_PASS=$SMTP_PASS"); fi
+          if [ -n "$SMTP_FROM" ]; then secret_args+=(--from-literal="SMTP_FROM=$SMTP_FROM"); fi
+          kubectl -n pureharvest create secret generic pureharvest-api-secrets \
+            "${secret_args[@]}" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
-          JENKINS_URL=${JENKINS_URL%/}
-          job_path=$(printf '%s' "$JENKINS_JOB" | sed 's#/#/job/#g')
-          curl --fail --silent --show-error \
-            --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
-            --request POST \
-            --data-urlencode "GIT_SHA=$GITHUB_SHA" \
-            --data-urlencode "DOCKERHUB_USERNAME=$DOCKERHUB_USERNAME" \
-            "$JENKINS_URL/job/$job_path/buildWithParameters"
+      - name: Apply Kubernetes manifests
+        run: kubectl apply -f k8s/api-deployment.yaml -f k8s/web-deployment.yaml
+
+      - name: Deploy commit images
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          kubectl -n pureharvest set image deployment/pureharvest-api \
+            api="$ECR_REGISTRY/pureharvest-api:$IMAGE_TAG"
+          kubectl -n pureharvest set image deployment/pureharvest-web \
+            web="$ECR_REGISTRY/pureharvest-web:$IMAGE_TAG"
+          kubectl -n pureharvest rollout status deployment/pureharvest-api --timeout=300s
+          kubectl -n pureharvest rollout status deployment/pureharvest-web --timeout=300s

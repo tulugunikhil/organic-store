@@ -13,8 +13,6 @@ spec:
       labels:
         app: pureharvest-api
     spec:
-      imagePullSecrets:
-        - name: dockerhub-pull
       containers:
         - name: api
           image: docker.io/library/node:22-alpine

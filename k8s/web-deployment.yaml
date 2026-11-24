@@ -13,8 +13,6 @@ spec:
       labels:
         app: pureharvest-web
     spec:
-      imagePullSecrets:
-        - name: dockerhub-pull
       containers:
         - name: web
           image: docker.io/library/nginx:stable-alpine
