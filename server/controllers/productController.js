@@ -274,12 +274,29 @@ exports.getProducts = async (req, res) => {
   }
 };
 
+exports.getMyProducts = async (req, res) => {
+  try {
+    if (Product.db.readyState !== 1) {
+      return res.status(503).json({ message: "Product storage is unavailable. Please try again later." });
+    }
+
+    const products = await Product.find({ sellerId: String(req.user.id) }).sort({ createdAt: -1 });
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 exports.createProduct = async (req, res) => {
   try {
-    const { name, price, description, category, image } = req.body;
+    const { name, price, description, category, image, stock } = req.body;
     const numericPrice = Number(price);
+    const numericStock = Number(stock ?? 0);
     if (!name?.trim() || !Number.isFinite(numericPrice) || numericPrice <= 0) {
       return res.status(400).json({ message: "A product name and a price greater than zero are required." });
+    }
+    if (!Number.isInteger(numericStock) || numericStock < 0) {
+      return res.status(400).json({ message: "Stock must be a whole number greater than or equal to zero." });
     }
 
     const product = await Product.create({
@@ -288,6 +305,8 @@ exports.createProduct = async (req, res) => {
       description: description || "",
       category: category || "general",
       image: image || "",
+      stock: numericStock,
+      sellerId: req.user.role === "seller" ? String(req.user.id) : "",
     });
     res.status(201).json(product);
   } catch (error) {

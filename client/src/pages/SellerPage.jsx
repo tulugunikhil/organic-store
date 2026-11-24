@@ -1,14 +1,7 @@
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { AuthContext } from "../context/AuthContext";
-
-const initialProducts = [
-  { name: "Royal Basmati Rice", category: "Rice", status: "In stock", stock: 120, price: 599 },
-  { name: "Organic Red Lentils", category: "Pulses", status: "Low stock", stock: 35, price: 329 },
-  { name: "Fresh Bananas", category: "Fruit", status: "In stock", stock: 80, price: 199 },
-  { name: "Farm Spinach", category: "Vegetables", status: "Fresh arrival", stock: 45, price: 249 },
-];
 
 const sellerStats = [
   { label: "Active listings", value: "24" },
@@ -19,23 +12,71 @@ const sellerStats = [
 
 export default function SellerPage() {
   const { user } = useContext(AuthContext);
-  const [products, setProducts] = useState(initialProducts);
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: "", category: "Rice", stock: "", price: "" });
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    if (!user?.token || user.role !== "seller") {
+      setProducts([]);
+      setError("Sign in with a seller account to manage your products.");
+      setProductsLoading(false);
+      return;
+    }
+
+    setProductsLoading(true);
+    fetch("/api/products/mine", {
+      headers: { Authorization: `Bearer ${user.token}` },
+    })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Could not load your products.");
+        if (!Array.isArray(data)) throw new Error("Unexpected product data response.");
+        setProducts(data);
+        setError("");
+      })
+      .catch((loadError) => {
+        setProducts([]);
+        setError(loadError.message || "Could not load your products.");
+      })
+      .finally(() => setProductsLoading(false));
+  }, [user?.token, user?.role]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.stock || !form.price) return;
+    if (!user?.token || user.role !== "seller") {
+      setError("Sign in with a seller account before adding products.");
+      return;
+    }
 
-    const newProduct = {
-      name: form.name,
-      category: form.category,
-      status: Number(form.stock) > 20 ? "In stock" : "Low stock",
-      stock: Number(form.stock),
-      price: Number(form.price),
-    };
+    setError("");
+    setSaving(true);
+    try {
+      const response = await fetch("/api/products", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`,
+        },
+        body: JSON.stringify({
+          name: form.name,
+          category: form.category,
+          stock: Number(form.stock),
+          price: Number(form.price),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Could not add the product.");
 
-    setProducts((prev) => [newProduct, ...prev]);
-    setForm({ name: "", category: "Rice", stock: "", price: "" });
+      setProducts((previous) => [data, ...previous]);
+      setForm({ name: "", category: "Rice", stock: "", price: "" });
+    } catch (submitError) {
+      setError(submitError.message || "Could not add the product.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -97,11 +138,13 @@ export default function SellerPage() {
             </div>
 
             <div style={{ display: "grid", gap: "12px" }}>
+              {productsLoading && <p>Loading your products...</p>}
+              {!productsLoading && !error && products.length === 0 && <p>You have not added any products yet.</p>}
               {products.map((item) => (
-                <div key={`${item.name}-${item.stock}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", border: "1px solid #edf2ea", borderRadius: "14px", background: "#f9fbf7" }}>
+                <div key={item._id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", border: "1px solid #edf2ea", borderRadius: "14px", background: "#f9fbf7" }}>
                   <div>
                     <strong style={{ display: "block", color: "#183323" }}>{item.name}</strong>
-                    <span style={{ color: "#6b776d", fontSize: "0.82rem" }}>{item.status}</span>
+                    <span style={{ color: "#6b776d", fontSize: "0.82rem" }}>{Number(item.stock) > 20 ? "In stock" : "Low stock"}</span>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontWeight: 700, color: "#183323" }}>{item.stock} units</div>
@@ -114,8 +157,9 @@ export default function SellerPage() {
 
           <div style={{ background: "#fff", border: "1px solid #ebefe9", borderRadius: "20px", padding: "20px", boxShadow: "0 12px 24px rgba(0,0,0,0.04)" }}>
             <h3 style={{ margin: "0 0 14px", color: "#173626", fontSize: "1.2rem" }}>Add product</h3>
+            {error && <p role="alert" style={{ color: "#b91c1c" }}>{error}</p>}
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Product name" style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }} />
+              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Product name" required style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }} />
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }}>
                 <option value="Rice">Rice</option>
                 <option value="Fruit">Fruit</option>
@@ -124,9 +168,9 @@ export default function SellerPage() {
                 <option value="Dairy">Dairy</option>
                 <option value="Vegetables">Vegetables</option>
               </select>
-              <input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} placeholder="Quantity" style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }} />
-              <input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="Price" style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }} />
-              <button type="submit" className="primary-btn" style={{ width: "100%", marginTop: "4px" }}>Save product</button>
+              <input type="number" min="0" step="1" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} placeholder="Quantity" required style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }} />
+              <input type="number" min="0.01" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="Price" required style={{ padding: "10px 12px", borderRadius: "12px", border: "1px solid #d7d7d7" }} />
+              <button type="submit" disabled={saving} className="primary-btn" style={{ width: "100%", marginTop: "4px" }}>{saving ? "Saving..." : "Save product"}</button>
             </form>
           </div>
         </section>
