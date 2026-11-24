@@ -158,7 +158,7 @@ jobs:
         run: |
           if ! aws scheduler get-schedule --name pureharvest-cleanup --group-name default >/dev/null 2>&1; then
             account_id="$(aws sts get-caller-identity --query Account --output text)"
-            cleanup_lambda_arn="$(aws lambda get-function --function-name pureharvest-prod-cleanup --query Configuration.FunctionArn --output text)"
+            cleanup_lambda_arn="arn:aws:lambda:us-east-1:${account_id}:function:pureharvest-prod-cleanup"
             scheduler_role_arn="arn:aws:iam::${account_id}:role/pureharvest-prod-cleanup-scheduler"
             cleanup_at="$(date -u -d '+24 hours' '+%Y-%m-%dT%H:%M:%S')"
             target="$(jq -cn \
