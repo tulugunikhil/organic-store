@@ -153,3 +153,25 @@ jobs:
             web="$ECR_REGISTRY/pureharvest-web:$IMAGE_TAG"
           kubectl -n pureharvest rollout status deployment/pureharvest-api --timeout=300s
           kubectl -n pureharvest rollout status deployment/pureharvest-web --timeout=300s
+
+      - name: Schedule one-day infrastructure cleanup
+        run: |
+          if ! aws scheduler get-schedule --name pureharvest-cleanup --group-name default >/dev/null 2>&1; then
+            account_id="$(aws sts get-caller-identity --query Account --output text)"
+            cleanup_lambda_arn="$(aws lambda get-function --function-name pureharvest-prod-cleanup --query Configuration.FunctionArn --output text)"
+            scheduler_role_arn="arn:aws:iam::${account_id}:role/pureharvest-prod-cleanup-scheduler"
+            cleanup_at="$(date -u -d '+24 hours' '+%Y-%m-%dT%H:%M:%S')"
+            target="$(jq -cn \
+              --arg arn "$cleanup_lambda_arn" \
+              --arg role "$scheduler_role_arn" \
+              --arg input '{"cluster_name":"pureharvest-prod"}' \
+              '{Arn:$arn,RoleArn:$role,Input:$input}')"
+            aws scheduler create-schedule \
+              --name pureharvest-cleanup \
+              --group-name default \
+              --schedule-expression "at($cleanup_at)" \
+              --flexible-time-window '{"Mode":"OFF"}' \
+              --action-after-completion DELETE \
+              --target "$target" \
+              --description "Delete PureHarvest AWS infrastructure 24 hours after first successful deployment"
+          fi

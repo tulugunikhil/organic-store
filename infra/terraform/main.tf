@@ -1,6 +1,8 @@
 locals {
-  vpc_cidr            = "10.40.0.0/16"
-  public_subnet_count = 2
+  vpc_cidr              = "10.40.0.0/16"
+  public_subnet_count   = 2
+  cleanup_function_name = "${var.cluster_name}-cleanup"
+  cleanup_schedule_arn  = "arn:${data.aws_partition.current.partition}:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule/default/pureharvest-cleanup"
   ecr_repository_names = {
     api = "pureharvest-api"
     web = "pureharvest-web"
@@ -313,6 +315,179 @@ resource "aws_iam_role_policy" "github_actions_deployer" {
   name   = "${var.cluster_name}-github-deployer"
   role   = aws_iam_role.github_actions_deployer.id
   policy = data.aws_iam_policy_document.github_actions_deployer.json
+}
+
+data "archive_file" "cleanup" {
+  type        = "zip"
+  source_file = "${path.module}/../cleanup/cleanup.py"
+  output_path = "${path.module}/.terraform/pureharvest-cleanup.zip"
+}
+
+data "aws_iam_policy_document" "cleanup_lambda_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "cleanup_lambda" {
+  name               = "${var.cluster_name}-cleanup-lambda"
+  assume_role_policy = data.aws_iam_policy_document.cleanup_lambda_assume_role.json
+}
+
+data "aws_iam_policy_document" "cleanup_lambda" {
+  statement {
+    actions = [
+      "eks:ListNodegroups",
+      "eks:DeleteNodegroup",
+      "eks:DescribeNodegroup",
+      "eks:DeleteCluster",
+      "eks:DescribeCluster",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = [
+      "ec2:DescribeVolumes",
+      "ec2:DeleteVolume",
+      "ec2:DescribeVpcs",
+      "ec2:DescribeSubnets",
+      "ec2:DeleteSubnet",
+      "ec2:DescribeRouteTables",
+      "ec2:DisassociateRouteTable",
+      "ec2:DeleteRouteTable",
+      "ec2:DescribeInternetGateways",
+      "ec2:DetachInternetGateway",
+      "ec2:DeleteInternetGateway",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DescribeSecurityGroups",
+      "ec2:RevokeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupIngress",
+      "ec2:DeleteSecurityGroup",
+      "ec2:DeleteVpc",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions   = ["ecr:DeleteRepository"]
+    resources = [for repository in aws_ecr_repository.app : repository.arn]
+  }
+
+  statement {
+    actions   = ["logs:DeleteLogGroup"]
+    resources = ["arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/eks/${var.cluster_name}/cluster"]
+  }
+
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "cleanup_lambda" {
+  name   = "${var.cluster_name}-cleanup"
+  role   = aws_iam_role.cleanup_lambda.id
+  policy = data.aws_iam_policy_document.cleanup_lambda.json
+}
+
+resource "aws_lambda_function" "cleanup" {
+  function_name    = local.cleanup_function_name
+  role             = aws_iam_role.cleanup_lambda.arn
+  handler          = "cleanup.handler"
+  runtime          = "python3.12"
+  filename         = data.archive_file.cleanup.output_path
+  source_code_hash = data.archive_file.cleanup.output_base64sha256
+  timeout          = 900
+  memory_size      = 256
+
+  depends_on = [
+    aws_iam_role_policy.cleanup_lambda,
+  ]
+}
+
+data "aws_iam_policy_document" "scheduler_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = ["arn:${data.aws_partition.current.partition}:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule-group/default"]
+    }
+  }
+}
+
+resource "aws_iam_role" "cleanup_scheduler" {
+  name               = "${var.cluster_name}-cleanup-scheduler"
+  assume_role_policy = data.aws_iam_policy_document.scheduler_assume_role.json
+}
+
+resource "aws_iam_role_policy" "cleanup_scheduler" {
+  name = "${var.cluster_name}-cleanup-scheduler"
+  role = aws_iam_role.cleanup_scheduler.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["lambda:InvokeFunction"]
+      Resource = aws_lambda_function.cleanup.arn
+    }]
+  })
+}
+
+resource "aws_lambda_permission" "cleanup_scheduler" {
+  statement_id   = "AllowEventBridgeSchedulerInvoke"
+  action         = "lambda:InvokeFunction"
+  function_name  = aws_lambda_function.cleanup.function_name
+  principal      = "scheduler.amazonaws.com"
+  source_account = data.aws_caller_identity.current.account_id
+  source_arn     = local.cleanup_schedule_arn
+}
+
+resource "aws_iam_role_policy" "github_actions_scheduler" {
+  name = "${var.cluster_name}-github-scheduler"
+  role = aws_iam_role.github_actions_deployer.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["scheduler:GetSchedule", "scheduler:CreateSchedule"]
+        Resource = local.cleanup_schedule_arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
+        Resource = aws_iam_role.cleanup_scheduler.arn
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "scheduler.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
 }
 
 resource "aws_eks_access_entry" "github_actions_deployer" {
