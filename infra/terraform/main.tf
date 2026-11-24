@@ -292,8 +292,10 @@ data "aws_iam_policy_document" "github_actions_deployer" {
 
   statement {
     actions = [
+      "ecr:BatchGetImage",
       "ecr:BatchCheckLayerAvailability",
       "ecr:CompleteLayerUpload",
+      "ecr:GetDownloadUrlForLayer",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",
       "ecr:UploadLayerPart",
