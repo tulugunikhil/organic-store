@@ -276,7 +276,19 @@ exports.getProducts = async (req, res) => {
 
 exports.createProduct = async (req, res) => {
   try {
-    const product = await Product.create(req.body);
+    const { name, price, description, category, image } = req.body;
+    const numericPrice = Number(price);
+    if (!name?.trim() || !Number.isFinite(numericPrice) || numericPrice <= 0) {
+      return res.status(400).json({ message: "A product name and a price greater than zero are required." });
+    }
+
+    const product = await Product.create({
+      name: name.trim(),
+      price: numericPrice,
+      description: description || "",
+      category: category || "general",
+      image: image || "",
+    });
     res.status(201).json(product);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -286,6 +298,7 @@ exports.createProduct = async (req, res) => {
 exports.updateProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!product) return res.status(404).json({ message: "Product not found." });
     res.json(product);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -294,7 +307,8 @@ exports.updateProduct = async (req, res) => {
 
 exports.deleteProduct = async (req, res) => {
   try {
-    await Product.findByIdAndDelete(req.params.id);
+    const product = await Product.findByIdAndDelete(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found." });
     res.json({ message: "Product deleted" });
   } catch (error) {
     res.status(500).json({ message: error.message });

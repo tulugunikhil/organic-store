@@ -1,14 +1,8 @@
 const express = require("express");
 const { register, login, getUsers, requestSellerOtp, verifySellerOtp, requestBuyerOtp, verifyBuyerOtp } = require("../controllers/authController");
 const authMiddleware = require("../middleware/authMiddleware");
+const requireAdmin = require("../middleware/requireAdmin");
 const router = express.Router();
-
-const requireAdmin = (req, res, next) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ message: "Admin access is required." });
-  }
-  next();
-};
 
 router.post("/register", register);
 router.post("/login", login);

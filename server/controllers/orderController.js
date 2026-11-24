@@ -85,3 +85,16 @@ exports.getMyOrders = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.getAllOrders = async (_req, res) => {
+  try {
+    if (Order.db.readyState !== 1) {
+      return res.status(503).json({ message: "Order storage is unavailable. Please try again later." });
+    }
+
+    const orders = await Order.find().sort({ createdAt: -1 });
+    res.json(orders.map(sanitizeOrder));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

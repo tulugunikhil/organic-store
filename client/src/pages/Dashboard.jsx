@@ -7,6 +7,9 @@ import { AuthContext } from "../context/AuthContext";
 export default function Dashboard() {
   const { user } = useContext(AuthContext);
   const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState("");
   const [customers, setCustomers] = useState([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customersError, setCustomersError] = useState("");
@@ -23,6 +26,32 @@ export default function Dashboard() {
       })
       .catch(() => setProducts([]));
   }, []);
+
+  useEffect(() => {
+    if (!user?.token || user.role !== "admin") {
+      setOrders([]);
+      setOrdersError("Sign in as an admin to view store orders.");
+      setOrdersLoading(false);
+      return;
+    }
+
+    setOrdersLoading(true);
+    fetch("/api/orders", {
+      headers: { Authorization: `Bearer ${user.token}` },
+    })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Could not load store orders.");
+        if (!Array.isArray(data)) throw new Error("Unexpected order data response.");
+        setOrders(data);
+        setOrdersError("");
+      })
+      .catch((error) => {
+        setOrders([]);
+        setOrdersError(error.message || "Could not load store orders.");
+      })
+      .finally(() => setOrdersLoading(false));
+  }, [user?.token, user?.role]);
 
   useEffect(() => {
     if (!user?.token) {
@@ -51,18 +80,27 @@ export default function Dashboard() {
   }, [user?.token]);
 
   const handleAddProduct = async (product) => {
+    if (!user?.token) throw new Error("Please sign in as an admin before adding products.");
+
     const res = await fetch("/api/products", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${user.token}`,
+      },
       body: JSON.stringify(product),
     });
 
-    if (res.ok) {
-      const newProduct = await res.json();
-      setProducts((prev) => [...prev, newProduct]);
-      setToast(true);
-      setTimeout(() => setToast(false), 2000);
-    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Could not add the product.");
+
+    setProducts((prev) => [data, ...prev]);
+    setToast(true);
+    setTimeout(() => setToast(false), 2000);
+  };
+
+  const scrollToSection = (sectionId) => {
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const summary = useMemo(() => {
@@ -162,7 +200,7 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.6fr", gap: "20px" }}>
-          <section style={{ background: "white", border: "1px solid #ebefea", borderRadius: "20px", padding: "20px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)" }}>
+          <section id="inventory-section" style={{ background: "white", border: "1px solid #ebefea", borderRadius: "20px", padding: "20px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
               <div>
                 <h3 style={{ margin: 0, color: "#173626", fontSize: "1.2rem" }}>Inventory</h3>
@@ -205,9 +243,9 @@ export default function Dashboard() {
             <div style={{ background: "white", border: "1px solid #ebefea", borderRadius: "20px", padding: "20px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)" }}>
               <h3 style={{ margin: "0 0 14px", color: "#173626", fontSize: "1.1rem" }}>Quick actions</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                <button style={{ background: "#edf8eb", color: "#246b35", border: "none", borderRadius: "12px", padding: "12px 14px", fontWeight: 700, cursor: "pointer" }}>Manage Products</button>
-                <button style={{ background: "#f7f3e8", color: "#6b4f11", border: "none", borderRadius: "12px", padding: "12px 14px", fontWeight: 700, cursor: "pointer" }}>View Orders</button>
-                <button style={{ background: "#eef4ff", color: "#2549a2", border: "none", borderRadius: "12px", padding: "12px 14px", fontWeight: 700, cursor: "pointer" }}>Promotions</button>
+                <button onClick={() => scrollToSection("inventory-section")} style={{ background: "#edf8eb", color: "#246b35", border: "none", borderRadius: "12px", padding: "12px 14px", fontWeight: 700, cursor: "pointer" }}>Manage Products</button>
+                <button onClick={() => scrollToSection("orders-section")} style={{ background: "#f7f3e8", color: "#6b4f11", border: "none", borderRadius: "12px", padding: "12px 14px", fontWeight: 700, cursor: "pointer" }}>View Orders</button>
+                <button onClick={() => scrollToSection("customers-section")} style={{ background: "#eef4ff", color: "#2549a2", border: "none", borderRadius: "12px", padding: "12px 14px", fontWeight: 700, cursor: "pointer" }}>View Customers</button>
               </div>
             </div>
 
@@ -219,7 +257,53 @@ export default function Dashboard() {
           </aside>
         </div>
 
-        <section style={{ background: "white", border: "1px solid #ebefea", borderRadius: "20px", padding: "20px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)", marginTop: "28px" }}>
+        <section id="orders-section" style={{ background: "white", border: "1px solid #ebefea", borderRadius: "20px", padding: "20px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)", marginTop: "28px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
+            <div>
+              <h3 style={{ margin: 0, color: "#173626", fontSize: "1.2rem" }}>Store orders</h3>
+              <div style={{ color: "#6b776d", fontSize: "0.88rem", marginTop: "4px" }}>Recent customer purchases and delivery status</div>
+            </div>
+            <span style={{ background: "#f7f3e8", color: "#6b4f11", borderRadius: "999px", padding: "6px 10px", fontWeight: 700, fontSize: "0.75rem" }}>{ordersLoading ? "Loading orders..." : `${orders.length} orders`}</span>
+          </div>
+          {ordersError && <p role="alert" style={{ color: "#b91c1c" }}>{ordersError}</p>}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "760px" }}>
+              <thead>
+                <tr style={{ background: "#f7f9f4", color: "#516159" }}>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Customer</th>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Items</th>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Delivery</th>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Total</th>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!ordersLoading && !ordersError && orders.length === 0 && (
+                  <tr><td colSpan={5} style={{ padding: "18px 10px", color: "#6b776d", textAlign: "center" }}>No orders yet.</td></tr>
+                )}
+                {!ordersError && orders.map((order) => (
+                  <tr key={order.id} style={{ borderBottom: "1px solid #eef1ea" }}>
+                    <td style={{ padding: "12px 10px", color: "#213c2d" }}>
+                      <strong>{order.account?.name || "Customer"}</strong>
+                      <div>{order.account?.email || order.userEmail}</div>
+                      <div>{order.account?.phone || "No phone provided"}</div>
+                    </td>
+                    <td style={{ padding: "12px 10px", color: "#213c2d" }}>
+                      {(order.items || []).map((item) => `${item.name} × ${item.quantity}`).join(", ")}
+                    </td>
+                    <td style={{ padding: "12px 10px", color: "#213c2d" }}>
+                      {order.delivery?.name}, {order.delivery?.address}, {order.delivery?.pincode}
+                    </td>
+                    <td style={{ padding: "12px 10px", color: "#213c2d", fontWeight: 700 }}>₹{Number(order.total || 0).toLocaleString()}</td>
+                    <td style={{ padding: "12px 10px", color: "#213c2d" }}>{order.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="customers-section" style={{ background: "white", border: "1px solid #ebefea", borderRadius: "20px", padding: "20px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)", marginTop: "28px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
             <div>
               <h3 style={{ margin: 0, color: "#173626", fontSize: "1.2rem" }}>Customer database</h3>
