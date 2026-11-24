@@ -1,4 +1,41 @@
 const Product = require("../models/Product");
+const Order = require("../models/Order");
+
+const normalizeProductName = (name) => String(name || "").trim().toLowerCase();
+
+const getPurchaseCounts = async () => {
+  if (Order.db.readyState !== 1) return { byId: new Map(), byName: new Map() };
+
+  const purchaseStats = await Order.aggregate([
+    { $unwind: "$items" },
+    {
+      $group: {
+        _id: { productId: "$items.productId", name: "$items.name" },
+        unitsPurchased: { $sum: { $ifNull: ["$items.quantity", 1] } },
+      },
+    },
+  ]);
+  const byId = new Map();
+  const byName = new Map();
+
+  for (const stat of purchaseStats) {
+    if (stat._id.productId) {
+      byId.set(stat._id.productId, (byId.get(stat._id.productId) || 0) + stat.unitsPurchased);
+    }
+    const name = normalizeProductName(stat._id.name);
+    if (name) byName.set(name, (byName.get(name) || 0) + stat.unitsPurchased);
+  }
+
+  return { byId, byName };
+};
+
+const includePurchaseCounts = (products, purchaseCounts) =>
+  products.map((product) => {
+    const item = typeof product.toObject === "function" ? product.toObject() : product;
+    const id = String(item._id || "");
+    const purchaseCount = purchaseCounts.byId.get(id) || purchaseCounts.byName.get(normalizeProductName(item.name)) || 0;
+    return { ...item, purchaseCount };
+  });
 
 const fallbackProducts = [
   {
@@ -221,18 +258,19 @@ const fallbackProducts = [
 
 exports.getProducts = async (req, res) => {
   try {
+    const purchaseCounts = await getPurchaseCounts();
     const products = await Product.find().sort({ createdAt: -1 });
     if (products.length === 0) {
-      return res.json(fallbackProducts);
+      return res.json(includePurchaseCounts(fallbackProducts, purchaseCounts));
     }
     const normalizeName = (name) => String(name || "").toLowerCase().replace(/\b(cold pressed|extra virgin|virgin)\b/g, "").replace(/\s+/g, " ").trim();
     const existingNames = new Set(products.map((product) => normalizeName(product.name)));
     const missingDefaultProducts = fallbackProducts.filter((product) =>
       ["Rice", "Oils"].includes(product.category) && !existingNames.has(normalizeName(product.name))
     );
-    res.json([...products, ...missingDefaultProducts]);
+    res.json(includePurchaseCounts([...products, ...missingDefaultProducts], purchaseCounts));
   } catch (error) {
-    return res.status(500).json({ message: error.message, products: fallbackProducts });
+    return res.status(500).json({ message: error.message });
   }
 };
 

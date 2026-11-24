@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
+const Order = require("../models/Order");
 const User = require("../models/User");
 
 const demoUsers = [];
@@ -16,13 +17,20 @@ const mailTransport = process.env.SMTP_HOST
     })
   : null;
 
-const sanitizeUser = (user) => ({
+const sanitizeUser = (user, latestOrder) => ({
   id: user._id || user.id,
   name: user.name,
   email: user.email,
-  phone: user.phone || "",
+  phone: user.phone || latestOrder?.account?.phone || "",
   role: user.role || "buyer",
   gstNumber: user.gstNumber || "",
+  latestDelivery: latestOrder
+    ? {
+        name: latestOrder.delivery?.name || "",
+        address: latestOrder.delivery?.address || "",
+        pincode: latestOrder.delivery?.pincode || "",
+      }
+    : null,
 });
 
 const normalizeIdentifier = (identifier) => {
@@ -109,7 +117,7 @@ const sendOtpEmail = async (email, otp) => {
 };
 
 const createTokenResponse = (user) => ({
-  token: jwt.sign({ id: user._id || user.id, role: user.role }, process.env.JWT_SECRET || "devsecret", { expiresIn: "7d" }),
+  token: jwt.sign({ id: user._id || user.id, email: user.email, role: user.role }, process.env.JWT_SECRET || "devsecret", { expiresIn: "7d" }),
   user: sanitizeUser(user),
 });
 
@@ -144,7 +152,7 @@ exports.register = async (req, res) => {
       gstNumber: gstNumber || "",
     });
 
-    const token = jwt.sign({ id: user._id || user.id, role: user.role }, process.env.JWT_SECRET || "devsecret", { expiresIn: "7d" });
+    const token = jwt.sign({ id: user._id || user.id, email: user.email, role: user.role }, process.env.JWT_SECRET || "devsecret", { expiresIn: "7d" });
 
     res.status(201).json({
       token,
@@ -262,14 +270,22 @@ exports.verifyBuyerOtp = async (req, res) => {
 
 exports.getUsers = async (req, res) => {
   try {
-    let users = [];
-    try {
-      users = await User.find().select("-password").sort({ createdAt: -1 });
-    } catch (error) {
-      users = demoUsers.map((user) => ({ ...user, password: undefined }));
+    if (User.db.readyState !== 1 || Order.db.readyState !== 1) {
+      return res.status(503).json({ message: "Customer data is unavailable. Please try again later." });
     }
 
-    res.json(users.map((user) => sanitizeUser(user)).filter(Boolean));
+    const [users, orders] = await Promise.all([
+      User.find().select("-password").sort({ createdAt: -1 }),
+      Order.find().select("userId account.phone delivery.name delivery.address delivery.pincode createdAt").sort({ createdAt: -1 }),
+    ]);
+    const latestOrders = new Map();
+    for (const order of orders) {
+      if (!latestOrders.has(String(order.userId))) {
+        latestOrders.set(String(order.userId), order);
+      }
+    }
+
+    res.json(users.map((user) => sanitizeUser(user, latestOrders.get(String(user._id)))));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

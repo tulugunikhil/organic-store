@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const mongoose = require("mongoose");
 
 dotenv.config();
 
@@ -15,8 +16,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.json({
+    message: "PureHarvest API is running",
+    endpoints: {
+      health: "/api/health",
+      products: "/api/products",
+      auth: "/api/auth",
+      orders: "/api/orders"
+    }
+  });
+});
+
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, mode: "demo" });
+  const databaseConnected = mongoose.connection.readyState === 1;
+  res.status(databaseConnected ? 200 : 503).json({
+    ok: databaseConnected,
+    mode: databaseConnected ? "database" : "demo",
+    database: databaseConnected ? "connected" : "disconnected"
+  });
 });
 
 app.use("/api/auth", authRoutes);

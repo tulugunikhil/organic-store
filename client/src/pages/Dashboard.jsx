@@ -8,6 +8,8 @@ export default function Dashboard() {
   const { user } = useContext(AuthContext);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [customersLoading, setCustomersLoading] = useState(true);
+  const [customersError, setCustomersError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState(false);
 
@@ -20,16 +22,33 @@ export default function Dashboard() {
         }
       })
       .catch(() => setProducts([]));
-
-    fetch("/api/auth/users")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setCustomers(data);
-        }
-      })
-      .catch(() => setCustomers([]));
   }, []);
+
+  useEffect(() => {
+    if (!user?.token) {
+      setCustomers([]);
+      setCustomersError("Sign in as an admin to view customer details.");
+      setCustomersLoading(false);
+      return;
+    }
+
+    setCustomersLoading(true);
+    fetch("/api/auth/users", {
+      headers: { Authorization: `Bearer ${user.token}` },
+    })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Could not load customer details.");
+        if (!Array.isArray(data)) throw new Error("Unexpected customer data response.");
+        setCustomers(data.filter((customer) => (customer.role || "buyer") === "buyer"));
+        setCustomersError("");
+      })
+      .catch((error) => {
+        setCustomers([]);
+        setCustomersError(error.message || "Could not load customer details.");
+      })
+      .finally(() => setCustomersLoading(false));
+  }, [user?.token]);
 
   const handleAddProduct = async (product) => {
     const res = await fetch("/api/products", {
@@ -49,24 +68,29 @@ export default function Dashboard() {
   const summary = useMemo(() => {
     const totalProducts = products.length;
     const totalInventoryValue = products.reduce((sum, product) => sum + Number(product.price || 0), 0);
-    const bestSeller = products[0]?.name || "No items";
+    const bestSeller = products.reduce(
+      (best, product) => Number(product.purchaseCount || 0) > Number(best?.purchaseCount || 0) ? product : best,
+      null
+    );
     const lowStockCount = products.filter((product) => Number(product.price || 0) < 300).length;
     const totalCustomers = customers.length;
 
     return {
       totalProducts,
       totalInventoryValue,
-      bestSeller,
+      bestSeller: bestSeller?.purchaseCount ? bestSeller.name : "No purchases yet",
       lowStockCount,
       totalCustomers,
     };
   }, [products, customers]);
 
-  const inventoryRows = products.slice(0, 8).map((product, index) => ({
-    ...product,
-    stock: Math.max(8, (index + 2) * 5),
-    status: Number(product.price || 0) > 500 ? "Popular" : "In stock",
-  }));
+  const inventoryRows = [...products]
+    .sort((left, right) => Number(right.purchaseCount || 0) - Number(left.purchaseCount || 0))
+    .map((product, index) => ({
+      ...product,
+      stock: Math.max(8, (index + 2) * 5),
+      status: Number(product.purchaseCount || 0) > 0 ? "Popular" : "In stock",
+    }));
 
   return (
     <div style={{ background: "linear-gradient(180deg, #f3f6f8 0%, #eef3f8 100%)", minHeight: "100vh" }}>
@@ -127,7 +151,7 @@ export default function Dashboard() {
             { label: "Products", value: summary.totalProducts, hint: "Live items", accent: "#eaf8eb" },
             { label: "Customers", value: summary.totalCustomers, hint: "Registered users", accent: "#eef4ff" },
             { label: "Revenue", value: `₹${summary.totalInventoryValue.toLocaleString()}`, hint: "Inventory value", accent: "#fff7e8" },
-            { label: "Best seller", value: summary.bestSeller, hint: "Top category", accent: "#fff0f2" },
+            { label: "Best seller", value: summary.bestSeller, hint: "Most units purchased", accent: "#fff0f2" },
           ].map((card) => (
             <div key={card.label} style={{ background: card.accent, border: "1px solid #e7eadf", borderRadius: "18px", padding: "18px", boxShadow: "0 12px 28px rgba(0,0,0,0.04)" }}>
               <div style={{ color: "#6b776d", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>{card.label}</div>
@@ -148,12 +172,13 @@ export default function Dashboard() {
             </div>
 
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "540px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "650px" }}>
                 <thead>
                   <tr style={{ background: "#f7f9f4", color: "#516159" }}>
                     <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Product</th>
                     <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Category</th>
                     <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Price</th>
+                    <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Units purchased</th>
                     <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Stock</th>
                     <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Status</th>
                   </tr>
@@ -164,6 +189,7 @@ export default function Dashboard() {
                       <td style={{ padding: "12px 10px", fontWeight: 700, color: "#213c2d" }}>{product.name}</td>
                       <td style={{ padding: "12px 10px", color: "#5a695f" }}>{product.category}</td>
                       <td style={{ padding: "12px 10px", color: "#213c2d", fontWeight: 700 }}>₹{product.price}</td>
+                      <td style={{ padding: "12px 10px", color: "#213c2d" }}>{product.purchaseCount || 0}</td>
                       <td style={{ padding: "12px 10px", color: "#213c2d" }}>{product.stock}</td>
                       <td style={{ padding: "12px 10px" }}>
                         <span style={{ display: "inline-block", padding: "6px 10px", borderRadius: "999px", background: product.status === "Popular" ? "#eaf8eb" : "#eef5ff", color: product.status === "Popular" ? "#2e7d32" : "#3154b1", fontSize: "0.75rem", fontWeight: 800 }}>{product.status}</span>
@@ -197,32 +223,35 @@ export default function Dashboard() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
             <div>
               <h3 style={{ margin: 0, color: "#173626", fontSize: "1.2rem" }}>Customer database</h3>
-              <div style={{ color: "#6b776d", fontSize: "0.88rem", marginTop: "4px" }}>Registered customers and their contact details</div>
+              <div style={{ color: "#6b776d", fontSize: "0.88rem", marginTop: "4px" }}>Registered customers and their latest saved delivery address</div>
             </div>
-            <span style={{ background: "#edf8eb", color: "#2e7d32", borderRadius: "999px", padding: "6px 10px", fontWeight: 700, fontSize: "0.75rem" }}>{customers.length} customers</span>
+            <span style={{ background: "#edf8eb", color: "#2e7d32", borderRadius: "999px", padding: "6px 10px", fontWeight: 700, fontSize: "0.75rem" }}>{customersLoading ? "Loading customers..." : `${customers.length} customers`}</span>
           </div>
 
+          {customersError && <p role="alert" style={{ color: "#b91c1c" }}>{customersError}</p>}
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "620px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "850px" }}>
               <thead>
                 <tr style={{ background: "#f7f9f4", color: "#516159" }}>
                   <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Name</th>
                   <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Email</th>
                   <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Phone</th>
+                  <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Latest delivery address</th>
                   <th style={{ textAlign: "left", padding: "12px 10px", fontSize: "0.8rem", fontWeight: 700 }}>Role</th>
                 </tr>
               </thead>
               <tbody>
-                {customers.length === 0 ? (
+                {customersLoading ? null : customers.length === 0 && !customersError ? (
                   <tr>
-                    <td colSpan={4} style={{ padding: "18px 10px", color: "#6b776d", textAlign: "center" }}>No customer records found.</td>
+                    <td colSpan={5} style={{ padding: "18px 10px", color: "#6b776d", textAlign: "center" }}>No customer records found.</td>
                   </tr>
-                ) : (
+                ) : !customersError && (
                   customers.map((customer) => (
                     <tr key={customer.id || customer.email} style={{ borderBottom: "1px solid #eef1ea" }}>
                       <td style={{ padding: "12px 10px", fontWeight: 700, color: "#213c2d" }}>{customer.name || "Unknown"}</td>
                       <td style={{ padding: "12px 10px", color: "#5a695f" }}>{customer.email}</td>
                       <td style={{ padding: "12px 10px", color: "#213c2d" }}>{customer.phone || "Not provided"}</td>
+                      <td style={{ padding: "12px 10px", color: "#213c2d" }}>{customer.latestDelivery?.address ? `${customer.latestDelivery.address}${customer.latestDelivery.pincode ? `, ${customer.latestDelivery.pincode}` : ""}` : "No delivery address yet"}</td>
                       <td style={{ padding: "12px 10px" }}>
                         <span style={{ display: "inline-block", padding: "6px 10px", borderRadius: "999px", background: customer.role === "admin" ? "#eef4ff" : "#eaf8eb", color: customer.role === "admin" ? "#3154b1" : "#2e7d32", fontSize: "0.75rem", fontWeight: 800, textTransform: "capitalize" }}>
                           {customer.role || "buyer"}

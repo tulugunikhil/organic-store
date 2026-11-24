@@ -1,7 +1,5 @@
 const Order = require("../models/Order");
 
-const demoOrders = [];
-
 const sanitizeOrder = (order) => ({
   id: order._id || order.id,
   userId: order.userId,
@@ -19,6 +17,10 @@ const sanitizeOrder = (order) => ({
 
 exports.createOrder = async (req, res) => {
   try {
+    if (Order.db.readyState !== 1) {
+      return res.status(503).json({ message: "Order storage is unavailable. Please try again later." });
+    }
+
     const { account, items, delivery, payment, subtotal, deliveryFee, total } = req.body;
     if (!/^\d{6}$/.test(delivery?.pincode || "")) {
       return res.status(400).json({ message: "A valid six-digit PIN code is required." });
@@ -34,7 +36,7 @@ exports.createOrder = async (req, res) => {
 
     const orderData = {
       userId: String(req.user.id),
-      userEmail: req.user.email,
+      userEmail: req.user.email || account.email,
       account: {
         name: account.name,
         email: account.email,
@@ -64,15 +66,7 @@ exports.createOrder = async (req, res) => {
       status: "Placed",
     };
 
-    let order;
-    try {
-      if (Order.db.readyState !== 1) throw new Error("MongoDB is not connected");
-      order = await Order.create(orderData);
-    } catch (error) {
-      order = { id: `demo-order-${Date.now()}`, ...orderData, createdAt: new Date().toISOString() };
-      demoOrders.push(order);
-    }
-
+    const order = await Order.create(orderData);
     res.status(201).json(sanitizeOrder(order));
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -81,14 +75,11 @@ exports.createOrder = async (req, res) => {
 
 exports.getMyOrders = async (req, res) => {
   try {
-    let orders;
-    try {
-      if (Order.db.readyState !== 1) throw new Error("MongoDB is not connected");
-      orders = await Order.find({ userId: String(req.user.id) }).sort({ createdAt: -1 });
-    } catch (error) {
-      orders = demoOrders.filter((order) => order.userId === String(req.user.id)).reverse();
+    if (Order.db.readyState !== 1) {
+      return res.status(503).json({ message: "Order storage is unavailable. Please try again later." });
     }
 
+    const orders = await Order.find({ userId: String(req.user.id) }).sort({ createdAt: -1 });
     res.json(orders.map(sanitizeOrder));
   } catch (error) {
     res.status(500).json({ message: error.message });

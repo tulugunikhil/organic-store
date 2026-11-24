@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
 
 export default function DebugPage() {
+  const { user } = useContext(AuthContext);
   const [products, setProducts] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,11 +14,14 @@ export default function DebugPage() {
       try {
         const [productsRes, usersRes] = await Promise.all([
           fetch("/api/products"),
-          fetch("/api/auth/users"),
+          fetch("/api/auth/users", {
+            headers: user?.token ? { Authorization: `Bearer ${user.token}` } : {},
+          }),
         ]);
 
         if (!productsRes.ok || !usersRes.ok) {
-          throw new Error("Failed to load data");
+          const errorData = await usersRes.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to load data");
         }
 
         const [productsData, usersData] = await Promise.all([productsRes.json(), usersRes.json()]);
@@ -30,7 +35,7 @@ export default function DebugPage() {
     };
 
     loadData();
-  }, []);
+  }, [user?.token]);
 
   return (
     <div className="storefront-shell">
@@ -71,6 +76,7 @@ export default function DebugPage() {
                       <th style={{ textAlign: "left", padding: "10px 12px" }}>Name</th>
                       <th style={{ textAlign: "left", padding: "10px 12px" }}>Category</th>
                       <th style={{ textAlign: "left", padding: "10px 12px" }}>Price</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Units purchased</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -79,6 +85,7 @@ export default function DebugPage() {
                         <td style={{ padding: "10px 12px", fontWeight: 700 }}>{product.name}</td>
                         <td style={{ padding: "10px 12px" }}>{product.category || "General"}</td>
                         <td style={{ padding: "10px 12px" }}>₹{Number(product.price || 0)}</td>
+                        <td style={{ padding: "10px 12px" }}>{product.purchaseCount || 0}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -99,6 +106,8 @@ export default function DebugPage() {
                       <th style={{ textAlign: "left", padding: "10px 12px" }}>Name</th>
                       <th style={{ textAlign: "left", padding: "10px 12px" }}>Email</th>
                       <th style={{ textAlign: "left", padding: "10px 12px" }}>Role</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Phone</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px" }}>Latest delivery address</th>
                       <th style={{ textAlign: "left", padding: "10px 12px" }}>GST Number</th>
                     </tr>
                   </thead>
@@ -108,6 +117,8 @@ export default function DebugPage() {
                         <td style={{ padding: "10px 12px", fontWeight: 700 }}>{user.name || user.email}</td>
                         <td style={{ padding: "10px 12px" }}>{user.email}</td>
                         <td style={{ padding: "10px 12px" }}>{user.role || "buyer"}</td>
+                        <td style={{ padding: "10px 12px" }}>{user.phone || "Not provided"}</td>
+                        <td style={{ padding: "10px 12px" }}>{user.latestDelivery?.address ? `${user.latestDelivery.address}${user.latestDelivery.pincode ? `, ${user.latestDelivery.pincode}` : ""}` : "No delivery address yet"}</td>
                         <td style={{ padding: "10px 12px" }}>{user.gstNumber || "—"}</td>
                       </tr>
                     ))}
