@@ -54,15 +54,9 @@ jobs:
       - name: Validate deployment configuration
         env:
           AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          MONGO_URI: ${{ secrets.MONGO_URI }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
           if [ -z "$AWS_DEPLOY_ROLE_ARN" ]; then
             echo "::error::Set the AWS_DEPLOY_ROLE_ARN Actions variable to the Terraform output."
-            exit 1
-          fi
-          if [ -z "$MONGO_URI" ] || [ -z "$JWT_SECRET" ]; then
-            echo "::error::Set the MONGO_URI and JWT_SECRET Actions secrets before deploying."
             exit 1
           fi
 
@@ -99,10 +93,24 @@ jobs:
       - name: Configure EKS access
         run: aws eks update-kubeconfig --region us-east-1 --name pureharvest-prod
 
+      - name: Initialize namespace and MongoDB credentials
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          if ! kubectl -n pureharvest get secret pureharvest-mongodb-secrets >/dev/null 2>&1; then
+            kubectl -n pureharvest create secret generic pureharvest-mongodb-secrets \
+              --from-literal=MONGO_INITDB_ROOT_USERNAME=pureharvest-root \
+              --from-literal=MONGO_INITDB_ROOT_PASSWORD="$(openssl rand -hex 32)" \
+              --from-literal=APP_DB_USERNAME=pureharvest-app \
+              --from-literal=APP_DB_PASSWORD="$(openssl rand -hex 32)"
+          fi
+
+      - name: Deploy internal MongoDB
+        run: |
+          kubectl apply -f k8s/mongodb.yaml
+          kubectl -n pureharvest rollout status statefulset/pureharvest-mongodb --timeout=300s
+
       - name: Update API configuration secret
         env:
-          MONGO_URI: ${{ secrets.MONGO_URI }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
@@ -110,9 +118,16 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
         run: |
+          if ! kubectl -n pureharvest get secret pureharvest-api-secrets >/dev/null 2>&1; then
+            kubectl -n pureharvest create secret generic pureharvest-api-secrets \
+              --from-literal=JWT_SECRET="$(openssl rand -hex 64)"
+          fi
+          jwt_secret="$(kubectl -n pureharvest get secret pureharvest-api-secrets -o jsonpath='{.data.JWT_SECRET}' | base64 --decode)"
+          app_db_password="$(kubectl -n pureharvest get secret pureharvest-mongodb-secrets -o jsonpath='{.data.APP_DB_PASSWORD}' | base64 --decode)"
+          mongo_uri="mongodb://pureharvest-app:${app_db_password}@pureharvest-mongodb:27017/pureharvest?authSource=pureharvest"
           secret_args=(
-            --from-literal="MONGO_URI=$MONGO_URI"
-            --from-literal="JWT_SECRET=$JWT_SECRET"
+            --from-literal="MONGO_URI=$mongo_uri"
+            --from-literal="JWT_SECRET=$jwt_secret"
           )
           if [ -n "$SMTP_HOST" ]; then secret_args+=(--from-literal="SMTP_HOST=$SMTP_HOST"); fi
           if [ -n "$SMTP_PORT" ]; then secret_args+=(--from-literal="SMTP_PORT=$SMTP_PORT"); fi

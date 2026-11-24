@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pureharvest-mongodb
+  namespace: pureharvest
+spec:
+  clusterIP: None
+  selector:
+    app: pureharvest-mongodb
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: mongodb
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pureharvest-mongodb-init
+  namespace: pureharvest
+data:
+  init-mongo.sh: |
+    #!/bin/bash
+    set -e
+    mongosh --quiet --eval "db.getSiblingDB('pureharvest').createUser({user: '${APP_DB_USERNAME}', pwd: '${APP_DB_PASSWORD}', roles: [{role: 'readWrite', db: 'pureharvest'}]})"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: pureharvest-mongodb
+  namespace: pureharvest
+spec:
+  serviceName: pureharvest-mongodb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pureharvest-mongodb
+  template:
+    metadata:
+      labels:
+        app: pureharvest-mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:8.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mongodb
+              containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: pureharvest-mongodb-secrets
+                  key: MONGO_INITDB_ROOT_USERNAME
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pureharvest-mongodb-secrets
+                  key: MONGO_INITDB_ROOT_PASSWORD
+            - name: APP_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: pureharvest-mongodb-secrets
+                  key: APP_DB_USERNAME
+            - name: APP_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pureharvest-mongodb-secrets
+                  key: APP_DB_PASSWORD
+          startupProbe:
+            tcpSocket:
+              port: mongodb
+            failureThreshold: 30
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: mongodb
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: mongodb
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+            - name: init-script
+              mountPath: /docker-entrypoint-initdb.d/init-mongo.sh
+              subPath: init-mongo.sh
+      volumes:
+        - name: init-script
+          configMap:
+            name: pureharvest-mongodb-init
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: gp2
+        resources:
+          requests:
+            storage: 8Gi

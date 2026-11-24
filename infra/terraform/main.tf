@@ -108,6 +108,30 @@ resource "aws_iam_role_policy_attachment" "eks_nodes" {
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/${each.value}"
 }
 
+data "aws_iam_policy_document" "pod_identity_assume_role" {
+  statement {
+    actions = [
+      "sts:AssumeRole",
+      "sts:TagSession",
+    ]
+
+    principals {
+      type        = "Service"
+      identifiers = ["pods.eks.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi" {
+  name               = "${var.cluster_name}-ebs-csi"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  role       = aws_iam_role.ebs_csi.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
 resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
   role_arn = aws_iam_role.eks_cluster.arn
@@ -129,6 +153,34 @@ resource "aws_eks_cluster" "main" {
 
   depends_on = [
     aws_iam_role_policy_attachment.eks_cluster,
+  ]
+}
+
+resource "aws_eks_addon" "pod_identity_agent" {
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "eks-pod-identity-agent"
+  resolve_conflicts_on_create = "OVERWRITE"
+}
+
+resource "aws_eks_pod_identity_association" "ebs_csi" {
+  cluster_name    = aws_eks_cluster.main.name
+  namespace       = "kube-system"
+  service_account = "ebs-csi-controller-sa"
+  role_arn        = aws_iam_role.ebs_csi.arn
+
+  depends_on = [
+    aws_eks_addon.pod_identity_agent,
+    aws_iam_role_policy_attachment.ebs_csi,
+  ]
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+
+  depends_on = [
+    aws_eks_pod_identity_association.ebs_csi,
   ]
 }
 
